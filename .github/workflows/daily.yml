@@ -1,0 +1,46 @@
+name: Kuro kainų scrape
+
+on:
+  schedule:
+    # 08:05 UTC = 11:05 LT (vasarą). ENA failai paskelbiami iki 10 val. LT.
+    - cron: '5 8 * * 1-5'
+  workflow_dispatch:        # rankinis paleidimas mygtuku
+
+permissions:
+  contents: write           # leisti commit'inti data.json
+
+concurrency:
+  group: scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: npm install xlsx --no-save
+
+      - name: Run scraper
+        run: node scrape.mjs
+        env:
+          # Pirmas paleidimas užfiksuos nuo šios datos. Palik tuščią = nuo šiandien.
+          # Norint istorijos nuo konkrečios datos: '2026-06-01'
+          START_FROM: ''
+
+      - name: Commit jei pasikeitė
+        run: |
+          git config user.name  "kuro-bot"
+          git config user.email "actions@github.com"
+          git add data.json
+          if git diff --staged --quiet; then
+            echo "Nieko naujo."
+          else
+            git commit -m "Atnaujinta: $(date -u +%Y-%m-%d)"
+            git push
+          fi
