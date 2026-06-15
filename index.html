@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kuro kainos · LT</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#0d1117;--panel:#161b22;--panel2:#1c2330;--line:#2a3340;
+  --ink:#e8edf2;--ink2:#9aa7b4;--ink3:#5f6b78;
+  --amber:#ffb000;--amber-dim:#7a5500;--green:#3fb950;--red:#f85149;--blue:#58a6ff;
+  --mono:'SF Mono',ui-monospace,'Cascadia Mono',Menlo,Consolas,monospace;
+  --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;
+  background-image:radial-gradient(circle at 20% 0%,rgba(255,176,0,.04),transparent 40%);min-height:100vh}
+.wrap{max-width:1280px;margin:0 auto;padding:24px 20px 80px}
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;
+  padding-bottom:18px;border-bottom:1px solid var(--line);margin-bottom:24px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:14px}
+.logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--amber),#cc7000);
+  display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:20px;color:#1a1200;
+  box-shadow:0 0 24px rgba(255,176,0,.25)}
+h1{font-size:19px;font-weight:650;letter-spacing:-.01em}
+.sub{color:var(--ink2);font-size:12.5px;font-family:var(--mono)}
+.src-link{color:var(--ink3);font-size:11.5px;text-decoration:none;border-bottom:1px dotted var(--ink3)}
+.src-link:hover{color:var(--amber)}
+
+.state{text-align:center;padding:80px 20px;color:var(--ink2)}
+.spinner{width:36px;height:36px;border:3px solid var(--line);border-top-color:var(--amber);
+  border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;position:relative;overflow:hidden}
+.kpi::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent,var(--amber))}
+.kpi .lbl{color:var(--ink2);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+.kpi .val{font-family:var(--mono);font-size:30px;font-weight:600;letter-spacing:-.02em;margin:6px 0 2px;font-variant-numeric:tabular-nums}
+.kpi .val small{font-size:14px;color:var(--ink2);font-weight:400}
+.kpi .delta{font-family:var(--mono);font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:4px}
+.delta.up{color:var(--red)}.delta.down{color:var(--green)}.delta.flat{color:var(--ink3)}
+
+.controls{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:11px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em}
+select{font-family:var(--mono);font-size:13px;background:var(--panel2);color:var(--ink);
+  border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:160px;cursor:pointer}
+select:focus{outline:none;border-color:var(--amber)}
+
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+.card h2{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink2);
+  margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.card h2 .tag{font-family:var(--mono);font-size:10px;background:var(--panel2);padding:2px 7px;border-radius:5px;color:var(--ink3);text-transform:none;letter-spacing:0}
+.chart-box{position:relative;height:280px}
+.full{grid-column:1/-1}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:11px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
+th:hover{color:var(--amber)}
+td{padding:8px 10px;border-bottom:1px solid #1a2029;font-variant-numeric:tabular-nums}
+td.num{font-family:var(--mono);text-align:right}
+tr:hover td{background:#1a212c}
+.price-pill{font-family:var(--mono);font-weight:600;padding:2px 8px;border-radius:6px;background:var(--panel2)}
+.lo{color:var(--green)}.hi{color:var(--red)}
+footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);color:var(--ink3);font-size:11.5px;font-family:var(--mono);text-align:center;line-height:1.8}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="brand">
+    <div class="logo">€</div>
+    <div>
+      <h1>Kuro kainos Lietuvoje</h1>
+      <div class="sub" id="subInfo">kraunama…</div>
+    </div>
+  </div>
+  <a class="src-link" href="https://www.ena.lt/degalu-kainos-degalinese/" target="_blank">ENA šaltinis ↗</a>
+</header>
+
+<div id="loading" class="state"><div class="spinner"></div>Kraunami duomenys…</div>
+<div id="error" class="state" style="display:none"></div>
+
+<div id="dash" style="display:none">
+  <div class="kpis" id="kpis"></div>
+  <div class="controls">
+    <div class="field"><label>Degalų tipas</label><select id="fType"></select></div>
+    <div class="field"><label>Įmonė / tinklas</label><select id="fBrand"></select></div>
+    <div class="field"><label>Savivaldybė</label><select id="fMuni"></select></div>
+    <div class="field"><label>Rodyti</label><select id="fAgg">
+      <option value="avg">Vidurkis</option><option value="min">Mažiausia</option><option value="max">Didžiausia</option>
+    </select></div>
+  </div>
+  <div class="grid"><div class="card full">
+    <h2>Kainų tendencija laike <span class="tag" id="trendTag">€/l</span></h2>
+    <div class="chart-box"><canvas id="trendChart"></canvas></div>
+  </div></div>
+  <div class="grid">
+    <div class="card">
+      <h2>Naujausios kainos pagal tipą <span class="tag" id="snapDate"></span></h2>
+      <div class="chart-box"><canvas id="typeChart"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Pigiausi tinklai <span class="tag">naujausia diena</span></h2>
+      <div class="chart-box"><canvas id="brandChart"></canvas></div>
+    </div>
+  </div>
+  <div class="card full">
+    <h2>Detali lentelė <span class="tag" id="tblCount"></span></h2>
+    <div style="overflow-x:auto"><table id="tbl">
+      <thead><tr>
+        <th data-k="type">Tipas</th><th data-k="brand">Tinklas</th>
+        <th data-k="muni">Savivaldybė</th><th data-k="addr">Adresas</th>
+        <th data-k="price" class="num">Kaina €/l</th>
+      </tr></thead><tbody id="tblBody"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<footer>
+  Duomenys: Lietuvos energetikos agentūra (ena.lt) · atnaujinama automatiškai kiekvieną darbo dieną<br>
+  Neoficialus įrankis · ne ENA produktas
+</footer>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+const fmt=n=>n==null||isNaN(n)?'—':n.toFixed(3);
+let DB=[],charts={};
+
+async function init(){
+  try{
+    const r=await fetch('data.json?t='+Date.now());
+    if(!r.ok)throw new Error('data.json nerastas (HTTP '+r.status+')');
+    const raw=await r.json();
+    // flatten {days:{date:[rows]}} → [{date,...row}]
+    DB=[];
+    for(const [date,rows] of Object.entries(raw.days||{})){
+      for(const row of rows)DB.push({date,...row});
+    }
+    if(!DB.length)throw new Error('Duomenų dar nėra. Pirmas scrape įvyks artimiausią darbo dieną.');
+    const days=[...new Set(DB.map(r=>r.date))].sort();
+    $('#subInfo').textContent=`${days.length} d. · ${days[0]} – ${days[days.length-1]} · ${DB.length} įrašų`;
+    $('#loading').style.display='none';
+    $('#dash').style.display='block';
+    render();
+  }catch(e){
+    $('#loading').style.display='none';
+    const el=$('#error');el.style.display='block';
+    el.innerHTML='⚠️ '+e.message;
+  }
+}
+
+function uniq(a){return[...new Set(a)].sort((x,y)=>String(x).localeCompare(String(y),'lt'))}
+function fillSelect(sel,vals,allLabel){
+  const cur=sel.value;
+  sel.innerHTML=`<option value="">${allLabel}</option>`+vals.map(v=>`<option>${v}</option>`).join('');
+  if([...sel.options].some(o=>o.value===cur))sel.value=cur;
+}
+function filtered(){
+  const t=$('#fType').value,b=$('#fBrand').value,m=$('#fMuni').value;
+  return DB.filter(r=>(!t||r.type===t)&&(!b||r.brand===b)&&(!m||r.muni===m));
+}
+function agg(rows,mode){
+  if(!rows.length)return null;
+  const ps=rows.map(r=>r.price);
+  if(mode==='min')return Math.min(...ps);
+  if(mode==='max')return Math.max(...ps);
+  return ps.reduce((a,b)=>a+b,0)/ps.length;
+}
+function pickColor(t){
+  const s=(t||'').toLowerCase();
+  if(/dyzel/.test(s))return'var(--green)';
+  if(/snd|dujo|lpg/.test(s))return'var(--blue)';
+  if(/98|premium/.test(s))return'var(--red)';
+  return'var(--amber)';
+}
+
+function render(){
+  fillSelect($('#fType'),uniq(DB.map(r=>r.type)),'Visi tipai');
+  fillSelect($('#fBrand'),uniq(DB.map(r=>r.brand)),'Visi tinklai');
+  fillSelect($('#fMuni'),uniq(DB.map(r=>r.muni)),'Visa Lietuva');
+  const rows=filtered();
+  const dates=uniq(rows.map(r=>r.date));
+  const latest=dates[dates.length-1],prev=dates[dates.length-2];
+  renderKPIs(rows,latest,prev);
+  renderTrend(rows,dates);
+  renderType(rows,latest);
+  renderBrand(rows,latest);
+  renderTable(rows);
+  $('#snapDate').textContent=latest||'';
+}
+function renderKPIs(rows,latest,prev){
+  const mode=$('#fAgg').value,box=$('#kpis');box.innerHTML='';
+  const lAll=rows.filter(r=>r.date===latest),pAll=rows.filter(r=>r.date===prev);
+  tile(box,'Vidutinė kaina',agg(lAll,'avg'),agg(pAll,'avg'),'var(--amber)');
+  for(const t of uniq(rows.map(r=>r.type)).slice(0,4)){
+    tile(box,t,agg(rows.filter(r=>r.date===latest&&r.type===t),mode),
+      agg(rows.filter(r=>r.date===prev&&r.type===t),mode),pickColor(t));
+  }
+}
+function tile(box,lbl,val,prevVal,accent){
+  let delta='',cls='flat',arrow='–';
+  if(val!=null&&prevVal!=null){
+    const d=val-prevVal;
+    if(Math.abs(d)>=0.0005){cls=d>0?'up':'down';arrow=d>0?'▲':'▼';delta=(d>0?'+':'')+fmt(d)}else delta='0.000';
+  }
+  const el=document.createElement('div');el.className='kpi';el.style.setProperty('--accent',accent);
+  el.innerHTML=`<div class="lbl">${lbl}</div><div class="val">${fmt(val)} <small>€/l</small></div>
+    <div class="delta ${cls}">${arrow} ${delta} <span style="color:var(--ink3);font-weight:400">vs praeita</span></div>`;
+  box.appendChild(el);
+}
+const C_GRID='#222a35';
+Chart.defaults.color='#7a8794';Chart.defaults.font.family="'SF Mono',monospace";Chart.defaults.font.size=11;
+function destroy(k){if(charts[k]){charts[k].destroy();delete charts[k]}}
+function renderTrend(rows,dates){
+  destroy('trend');const mode=$('#fAgg').value;
+  $('#trendTag').textContent={avg:'vidurkis €/l',min:'min €/l',max:'max €/l'}[mode];
+  const types=uniq(rows.map(r=>r.type));
+  const pal=['#ffb000','#3fb950','#58a6ff','#f85149','#bc8cff','#39c5cf'];
+  const ds=types.map((t,i)=>({label:t,borderColor:pal[i%pal.length],backgroundColor:pal[i%pal.length]+'22',
+    tension:.3,borderWidth:2,pointRadius:2,pointHoverRadius:5,
+    data:dates.map(d=>{const rr=rows.filter(r=>r.date===d&&r.type===t);return rr.length?+agg(rr,mode).toFixed(3):null})}));
+  charts.trend=new Chart($('#trendChart'),{type:'line',data:{labels:dates,datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:14}}},
+      scales:{y:{grid:{color:C_GRID},ticks:{callback:v=>v.toFixed(2)}},x:{grid:{display:false}}}}});
+}
+function renderType(rows,latest){
+  destroy('type');const mode=$('#fAgg').value;
+  const types=uniq(rows.map(r=>r.type));
+  const data=types.map(t=>{const rr=rows.filter(r=>r.date===latest&&r.type===t);return rr.length?+agg(rr,mode).toFixed(3):0});
+  charts.type=new Chart($('#typeChart'),{type:'bar',
+    data:{labels:types,datasets:[{data,backgroundColor:types.map(pickColor),borderRadius:6}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{grid:{color:C_GRID},ticks:{callback:v=>v.toFixed(2)}},x:{grid:{display:false}}}}});
+}
+function renderBrand(rows,latest){
+  destroy('brand');const t=$('#fType').value;
+  const src=rows.filter(r=>r.date===latest&&(!t||r.type===t));
+  const data=uniq(src.map(r=>r.brand)).map(b=>({b,v:agg(src.filter(r=>r.brand===b),'avg')}))
+    .filter(x=>x.v!=null).sort((a,b)=>a.v-b.v).slice(0,8);
+  charts.brand=new Chart($('#brandChart'),{type:'bar',
+    data:{labels:data.map(d=>d.b),datasets:[{data:data.map(d=>+d.v.toFixed(3)),
+      backgroundColor:data.map((_,i)=>i===0?'#3fb950':'#3a4a5e'),borderRadius:6}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.x.toFixed(3)+' €/l'}}},
+      scales:{x:{grid:{color:C_GRID},ticks:{callback:v=>v.toFixed(2)}},y:{grid:{display:false}}}}});
+}
+let sortKey='price',sortDir=1;
+function renderTable(rows){
+  const latest=uniq(rows.map(r=>r.date)).pop();
+  const day=rows.filter(r=>r.date===latest);
+  const sorted=[...day].sort((a,b)=>sortKey==='price'?(a.price-b.price)*sortDir
+    :String(a[sortKey]).localeCompare(String(b[sortKey]),'lt')*sortDir).slice(0,400);
+  const lo=Math.min(...day.map(r=>r.price)),hi=Math.max(...day.map(r=>r.price));
+  $('#tblBody').innerHTML=sorted.map(r=>{
+    const cls=r.price===lo?'lo':r.price===hi?'hi':'';
+    return `<tr><td>${r.type}</td><td>${r.brand}</td><td>${r.muni}</td><td>${r.addr||''}</td>
+      <td class="num"><span class="price-pill ${cls}">${fmt(r.price)}</span></td></tr>`;
+  }).join('');
+  $('#tblCount').textContent=`${latest} · ${day.length} degalinių`;
+}
+document.querySelectorAll('#tbl th').forEach(th=>th.onclick=()=>{
+  const k=th.dataset.k;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=k==='price'?1:-1}renderTable(filtered());
+});
+['fType','fBrand','fMuni','fAgg'].forEach(id=>$('#'+id).onchange=render);
+init();
+</script>
+</body>
+</html>
