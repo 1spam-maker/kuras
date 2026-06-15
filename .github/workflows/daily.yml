@@ -31,7 +31,7 @@ jobs:
         env:
           # Pirmas paleidimas užfiksuos nuo šios datos. Palik tuščią = nuo šiandien.
           # Norint istorijos nuo konkrečios datos: '2026-06-01'
-          START_FROM: ''
+          START_FROM: '2026-06-01'
 
       - name: Commit jei pasikeitė
         run: |
