@@ -12,9 +12,14 @@ const ENA_PAGE = 'https://www.ena.lt/dk-visa-informacija/';
 const DATA_FILE = 'data.json';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
-// Nuo kada kaupti. Jei nori viską nuo pradžių — pakeisk į '2026-01-01'.
-// Pirmas paleidimas užsifiksuos prie šios datos; vėliau ima viską, kas naujesnė.
-const START_FROM = process.env.START_FROM || new Date().toISOString().slice(0, 10);
+// Nuo kada kaupti.
+// - Jei nustatytas env START_FROM (pvz. '2026-06-01') — ima nuo tos datos.
+// - Jei tuščias — ima paskutines LOOKBACK_DAYS dienų (kad pagautų naujausią
+//   paskelbtą dieną net jei tai penktadienis prieš savaitgalį).
+// Jau turimos dienos vis tiek praleidžiamos (žr. žemiau), tad nedubliuoja.
+const LOOKBACK_DAYS = 14;
+const START_FROM = process.env.START_FROM
+  || new Date(Date.now() - LOOKBACK_DAYS * 864e5).toISOString().slice(0, 10);
 
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
@@ -113,6 +118,8 @@ async function main() {
     try { db = JSON.parse(readFileSync(DATA_FILE, 'utf8')); } catch { log('data.json sugadintas, kuriu naują'); }
     if (!db.days) db.days = {};
   }
+  // Jei tai pradinis seed (demo) failas — išvalom, kad realūs duomenys jį pakeistų.
+  if (db.seed) { log('Aptiktas seed failas — valau demo duomenis'); db = { updated: null, days: {} }; }
   const have = new Set(Object.keys(db.days));
   log('Jau turima dienų:', have.size);
 
