@@ -94,6 +94,9 @@ footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);color:v
     <div class="field"><label>Rodyti</label><select id="fAgg">
       <option value="avg">Vidurkis</option><option value="min">Mažiausia</option><option value="max">Didžiausia</option>
     </select></div>
+    <div class="field"><label>Laikotarpis</label><select id="fPeriod">
+      <option value="0">Visas</option><option value="90">90 d. d.</option><option value="30">30 d. d.</option><option value="10">10 d. d.</option>
+    </select></div>
   </div>
   <div class="grid"><div class="card full">
     <h2>Kainų tendencija laike <span class="tag" id="trendTag">€/l</span></h2>
@@ -105,7 +108,7 @@ footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);color:v
       <div class="chart-box"><canvas id="typeChart"></canvas></div>
     </div>
     <div class="card">
-      <h2>Pigiausi tinklai <span class="tag">naujausia diena</span></h2>
+      <h2>Pigiausi tinklai <span class="tag" id="brandTag">naujausia diena</span></h2>
       <div class="chart-box"><canvas id="brandChart"></canvas></div>
     </div>
   </div>
@@ -128,147 +131,143 @@ footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);color:v
 </div>
 
 <script>
+// ===== duomenų sluoksnis (v2 kompaktiškas data.json; palaiko ir seną v1) =====
 const $=s=>document.querySelector(s);
 const fmt=n=>n==null||isNaN(n)?'—':n.toFixed(3);
-let DB=[],charts={};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let D=null,charts={};
 
+function build(raw){
+  let stations,types,days;
+  if(raw.v===2){({stations,types,days}=raw)}
+  else{ // v1: {days:{date:[{brand,muni,addr,type,price}]}}
+    stations=[];types=[];days={};const si=new Map(),ti=new Map();
+    for(const[d,rows]of Object.entries(raw.days||{})){days[d]=rows.map(r=>{
+      const k=`${r.brand}|${r.muni}|${r.addr||''}`;if(!si.has(k)){si.set(k,stations.length);stations.push([r.brand,r.muni,r.addr||''])}
+      if(!ti.has(r.type)){ti.set(r.type,types.length);types.push(r.type)}
+      return[si.get(k),ti.get(r.type),Math.round(r.price*1000)]})}
+  }
+  const dates=Object.keys(days).sort();
+  let n=0;for(const d of dates)n+=days[d].length;
+  const R={n,d:new Uint16Array(n),s:new Uint32Array(n),t:new Uint8Array(n),p:new Uint16Array(n),dayStart:new Uint32Array(dates.length+1)};
+  let i=0;dates.forEach((dt,di)=>{R.dayStart[di]=i;for(const[s,t,p]of days[dt]){R.d[i]=di;R.s[i]=s;R.t[i]=t;R.p[i]=p;i++}});R.dayStart[dates.length]=i;
+  const uniq=a=>[...new Set(a)].sort((x,y)=>x.localeCompare(y,'lt'));
+  const brands=uniq(stations.map(s=>s[0])),munis=uniq(stations.map(s=>s[1]));
+  const bI=new Map(brands.map((b,i)=>[b,i])),mI=new Map(munis.map((m,i)=>[m,i]));
+  return{dates,types,stations,brands,munis,R,
+    stBrand:Uint16Array.from(stations,s=>bI.get(s[0])),stMuni:Uint16Array.from(stations,s=>mI.get(s[1])),updated:raw.updated};
+}
+
+// vienas praėjimas per visas eilutes → agregatai (data×tipas), paskutinės dienos eilutės, tinklų vidurkiai
+function compute(D,f){
+  const nT=D.types.length,nD=D.dates.length,R=D.R;
+  const start=f.period>0?Math.max(0,nD-f.period):0;
+  const sum=new Float64Array(nD*nT),cnt=new Uint32Array(nD*nT),mn=new Float64Array(nD*nT).fill(Infinity),mx=new Float64Array(nD*nT).fill(-Infinity);
+  const pass=i=>{const s=R.s[i];return(f.t<0||R.t[i]===f.t)&&(f.b<0||D.stBrand[s]===f.b)&&(f.m<0||D.stMuni[s]===f.m)};
+  for(let i=R.dayStart[start];i<R.n;i++){
+    if(!pass(i))continue;
+    const k=R.d[i]*nT+R.t[i],p=R.p[i]/1000;sum[k]+=p;cnt[k]++;if(p<mn[k])mn[k]=p;if(p>mx[k])mx[k]=p;
+  }
+  const val=(d,t,agg=f.agg)=>{const k=d*nT+t;if(d<0||!cnt[k])return null;return agg==='min'?mn[k]:agg==='max'?mx[k]:sum[k]/cnt[k]};
+  const dIdx=[];for(let d=start;d<nD;d++){for(let t=0;t<nT;t++)if(cnt[d*nT+t]){dIdx.push(d);break}}
+  const latest=dIdx.length?dIdx[dIdx.length-1]:-1,prev=dIdx.length>1?dIdx[dIdx.length-2]:-1;
+  const typesPresent=[...Array(nT).keys()].filter(t=>dIdx.some(d=>cnt[d*nT+t]));
+  const bt=f.t>=0?f.t:Math.max(0,D.types.findIndex(t=>/95/.test(t))); // tinklų palyginimas — vienas tipas
+  const day=[],brandAgg=new Map(),stSet=new Set();
+  if(latest>=0)for(let i=R.dayStart[latest];i<R.dayStart[latest+1];i++){
+    if(!pass(i))continue;day.push(i);stSet.add(R.s[i]);
+    if(R.t[i]!==bt)continue;
+    const b=D.stBrand[R.s[i]],a=brandAgg.get(b)||{s:0,n:0};a.s+=R.p[i]/1000;a.n++;brandAgg.set(b,a);
+  }
+  return{dIdx,latest,prev,typesPresent,val,day,brandAgg,bt,stations:stSet.size};
+}
+
+// ===== UI =====
 async function init(){
   try{
     const r=await fetch('data.json?t='+Date.now());
     if(!r.ok)throw new Error('data.json nerastas (HTTP '+r.status+')');
-    const raw=await r.json();
-    // flatten {days:{date:[rows]}} → [{date,...row}]
-    DB=[];
-    for(const [date,rows] of Object.entries(raw.days||{})){
-      for(const row of rows)DB.push({date,...row});
-    }
-    if(!DB.length)throw new Error('Duomenų dar nėra. Pirmas scrape įvyks artimiausią darbo dieną.');
-    const days=[...new Set(DB.map(r=>r.date))].sort();
-    $('#subInfo').textContent=`${days.length} d. · ${days[0]} – ${days[days.length-1]} · ${DB.length} įrašų`;
-    $('#loading').style.display='none';
-    $('#dash').style.display='block';
+    D=build(await r.json());
+    if(!D.R.n)throw new Error('Duomenų dar nėra. Jie atsiras po artimiausio sėkmingo scrape paleidimo.');
+    $('#subInfo').textContent=`${D.dates.length} d. · ${D.dates[0]} – ${D.dates.at(-1)} · ${D.R.n.toLocaleString('lt-LT')} kainų`;
+    const opt=(arr,all)=>`<option value="-1">${all}</option>`+arr.map((v,i)=>`<option value="${i}">${esc(v)}</option>`).join('');
+    $('#fType').innerHTML=opt(D.types,'Visi tipai');
+    $('#fBrand').innerHTML=opt(D.brands,'Visi tinklai');
+    $('#fMuni').innerHTML=opt(D.munis,'Visa Lietuva');
+    $('#loading').style.display='none';$('#dash').style.display='block';
     render();
   }catch(e){
-    $('#loading').style.display='none';
-    const el=$('#error');el.style.display='block';
-    el.innerHTML='⚠️ '+e.message;
+    $('#loading').style.display='none';const el=$('#error');el.style.display='block';el.textContent='⚠️ '+e.message;
   }
 }
-
-function uniq(a){return[...new Set(a)].sort((x,y)=>String(x).localeCompare(String(y),'lt'))}
-function fillSelect(sel,vals,allLabel){
-  const cur=sel.value;
-  sel.innerHTML=`<option value="">${allLabel}</option>`+vals.map(v=>`<option>${v}</option>`).join('');
-  if([...sel.options].some(o=>o.value===cur))sel.value=cur;
-}
-function filtered(){
-  const t=$('#fType').value,b=$('#fBrand').value,m=$('#fMuni').value;
-  return DB.filter(r=>(!t||r.type===t)&&(!b||r.brand===b)&&(!m||r.muni===m));
-}
-function agg(rows,mode){
-  if(!rows.length)return null;
-  const ps=rows.map(r=>r.price);
-  if(mode==='min')return Math.min(...ps);
-  if(mode==='max')return Math.max(...ps);
-  return ps.reduce((a,b)=>a+b,0)/ps.length;
-}
-function pickColor(t){
-  const s=(t||'').toLowerCase();
-  if(/dyzel/.test(s))return'var(--green)';
-  if(/snd|dujo|lpg/.test(s))return'var(--blue)';
-  if(/98|premium/.test(s))return'var(--red)';
-  return'var(--amber)';
-}
-
+const filt=()=>({t:+$('#fType').value,b:+$('#fBrand').value,m:+$('#fMuni').value,agg:$('#fAgg').value,period:+$('#fPeriod').value});
+function pickColor(t){const s=(t||'').toLowerCase();
+  if(/dyzel/.test(s))return'#3fb950';if(/snd|duj|lpg/.test(s))return'#58a6ff';if(/98|premium/.test(s))return'#f85149';return'#ffb000'}
 function render(){
-  fillSelect($('#fType'),uniq(DB.map(r=>r.type)),'Visi tipai');
-  fillSelect($('#fBrand'),uniq(DB.map(r=>r.brand)),'Visi tinklai');
-  fillSelect($('#fMuni'),uniq(DB.map(r=>r.muni)),'Visa Lietuva');
-  const rows=filtered();
-  const dates=uniq(rows.map(r=>r.date));
-  const latest=dates[dates.length-1],prev=dates[dates.length-2];
-  renderKPIs(rows,latest,prev);
-  renderTrend(rows,dates);
-  renderType(rows,latest);
-  renderBrand(rows,latest);
-  renderTable(rows);
-  $('#snapDate').textContent=latest||'';
+  const f=filt(),C=compute(D,f);
+  renderKPIs(C,f);renderTrend(C,f);renderType(C);renderBrand(C);renderTable(C);
+  $('#snapDate').textContent=C.latest>=0?D.dates[C.latest]:'';
 }
-function renderKPIs(rows,latest,prev){
-  const mode=$('#fAgg').value,box=$('#kpis');box.innerHTML='';
-  const lAll=rows.filter(r=>r.date===latest),pAll=rows.filter(r=>r.date===prev);
-  tile(box,'Vidutinė kaina',agg(lAll,'avg'),agg(pAll,'avg'),'var(--amber)');
-  for(const t of uniq(rows.map(r=>r.type)).slice(0,4)){
-    tile(box,t,agg(rows.filter(r=>r.date===latest&&r.type===t),mode),
-      agg(rows.filter(r=>r.date===prev&&r.type===t),mode),pickColor(t));
+function renderKPIs(C,f){
+  const box=$('#kpis');box.innerHTML='';
+  const info=document.createElement('div');info.className='kpi';info.style.setProperty('--accent','var(--ink3)');
+  info.innerHTML=`<div class="lbl">Naujausi duomenys</div><div class="val" style="font-size:22px">${C.latest>=0?D.dates[C.latest]:'—'}</div>
+    <div class="delta flat">${C.stations} degalinių</div>`;box.appendChild(info);
+  for(const t of C.typesPresent.slice(0,4)){
+    const v=C.val(C.latest,t),p=C.val(C.prev,t);
+    let cls='flat',arrow='–',delta='';
+    if(v!=null&&p!=null){const d=v-p;if(Math.abs(d)>=0.0005){cls=d>0?'up':'down';arrow=d>0?'▲':'▼';delta=(d>0?'+':'')+fmt(d)}else delta='0.000'}
+    const el=document.createElement('div');el.className='kpi';el.style.setProperty('--accent',pickColor(D.types[t]));
+    el.innerHTML=`<div class="lbl">${esc(D.types[t])} · ${{avg:'vid.',min:'min',max:'max'}[f.agg]}</div><div class="val">${fmt(v)} <small>€/l</small></div>
+      <div class="delta ${cls}">${arrow} ${delta} <span style="color:var(--ink3);font-weight:400">vs ${C.prev>=0?D.dates[C.prev].slice(5):'—'}</span></div>`;
+    box.appendChild(el);
   }
-}
-function tile(box,lbl,val,prevVal,accent){
-  let delta='',cls='flat',arrow='–';
-  if(val!=null&&prevVal!=null){
-    const d=val-prevVal;
-    if(Math.abs(d)>=0.0005){cls=d>0?'up':'down';arrow=d>0?'▲':'▼';delta=(d>0?'+':'')+fmt(d)}else delta='0.000';
-  }
-  const el=document.createElement('div');el.className='kpi';el.style.setProperty('--accent',accent);
-  el.innerHTML=`<div class="lbl">${lbl}</div><div class="val">${fmt(val)} <small>€/l</small></div>
-    <div class="delta ${cls}">${arrow} ${delta} <span style="color:var(--ink3);font-weight:400">vs praeita</span></div>`;
-  box.appendChild(el);
 }
 const C_GRID='#222a35';
-Chart.defaults.color='#7a8794';Chart.defaults.font.family="'SF Mono',monospace";Chart.defaults.font.size=11;
+Chart.defaults.color='#7a8794';Chart.defaults.font.family="'SF Mono',ui-monospace,monospace";Chart.defaults.font.size=11;
 function destroy(k){if(charts[k]){charts[k].destroy();delete charts[k]}}
-function renderTrend(rows,dates){
-  destroy('trend');const mode=$('#fAgg').value;
-  $('#trendTag').textContent={avg:'vidurkis €/l',min:'min €/l',max:'max €/l'}[mode];
-  const types=uniq(rows.map(r=>r.type));
-  const pal=['#ffb000','#3fb950','#58a6ff','#f85149','#bc8cff','#39c5cf'];
-  const ds=types.map((t,i)=>({label:t,borderColor:pal[i%pal.length],backgroundColor:pal[i%pal.length]+'22',
-    tension:.3,borderWidth:2,pointRadius:2,pointHoverRadius:5,
-    data:dates.map(d=>{const rr=rows.filter(r=>r.date===d&&r.type===t);return rr.length?+agg(rr,mode).toFixed(3):null})}));
-  charts.trend=new Chart($('#trendChart'),{type:'line',data:{labels:dates,datasets:ds},
-    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+function renderTrend(C,f){
+  destroy('trend');$('#trendTag').textContent={avg:'vidurkis €/l',min:'min €/l',max:'max €/l'}[f.agg];
+  const ds=C.typesPresent.map(t=>({label:D.types[t],borderColor:pickColor(D.types[t]),backgroundColor:pickColor(D.types[t])+'22',
+    tension:.25,borderWidth:2,pointRadius:C.dIdx.length>60?0:2,pointHoverRadius:4,spanGaps:true,
+    data:C.dIdx.map(d=>{const v=C.val(d,t);return v==null?null:+v.toFixed(3)})}));
+  charts.trend=new Chart($('#trendChart'),{type:'line',data:{labels:C.dIdx.map(d=>D.dates[d]),datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},
       plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:14}}},
+      scales:{y:{grid:{color:C_GRID},ticks:{callback:v=>v.toFixed(2)}},x:{grid:{display:false},ticks:{maxTicksLimit:12}}}}});
+}
+function renderType(C){
+  destroy('type');
+  const data=C.typesPresent.map(t=>{const v=C.val(C.latest,t);return v==null?0:+v.toFixed(3)});
+  charts.type=new Chart($('#typeChart'),{type:'bar',data:{labels:C.typesPresent.map(t=>D.types[t]),
+    datasets:[{data,backgroundColor:C.typesPresent.map(t=>pickColor(D.types[t])),borderRadius:6}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}},
       scales:{y:{grid:{color:C_GRID},ticks:{callback:v=>v.toFixed(2)}},x:{grid:{display:false}}}}});
 }
-function renderType(rows,latest){
-  destroy('type');const mode=$('#fAgg').value;
-  const types=uniq(rows.map(r=>r.type));
-  const data=types.map(t=>{const rr=rows.filter(r=>r.date===latest&&r.type===t);return rr.length?+agg(rr,mode).toFixed(3):0});
-  charts.type=new Chart($('#typeChart'),{type:'bar',
-    data:{labels:types,datasets:[{data,backgroundColor:types.map(pickColor),borderRadius:6}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{y:{grid:{color:C_GRID},ticks:{callback:v=>v.toFixed(2)}},x:{grid:{display:false}}}}});
-}
-function renderBrand(rows,latest){
-  destroy('brand');const t=$('#fType').value;
-  const src=rows.filter(r=>r.date===latest&&(!t||r.type===t));
-  const data=uniq(src.map(r=>r.brand)).map(b=>({b,v:agg(src.filter(r=>r.brand===b),'avg')}))
-    .filter(x=>x.v!=null).sort((a,b)=>a.v-b.v).slice(0,8);
-  charts.brand=new Chart($('#brandChart'),{type:'bar',
-    data:{labels:data.map(d=>d.b),datasets:[{data:data.map(d=>+d.v.toFixed(3)),
-      backgroundColor:data.map((_,i)=>i===0?'#3fb950':'#3a4a5e'),borderRadius:6}]},
-    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+function renderBrand(C){
+  destroy('brand');$('#brandTag').textContent=`${D.types[C.bt]||''} · vidurkis`;
+  const data=[...C.brandAgg].map(([b,a])=>({b:D.brands[b],v:a.s/a.n})).sort((x,y)=>x.v-y.v).slice(0,8);
+  charts.brand=new Chart($('#brandChart'),{type:'bar',data:{labels:data.map(d=>d.b),
+    datasets:[{data:data.map(d=>+d.v.toFixed(3)),backgroundColor:data.map((_,i)=>i===0?'#3fb950':'#3a4a5e'),borderRadius:6}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,animation:false,
       plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.x.toFixed(3)+' €/l'}}},
       scales:{x:{grid:{color:C_GRID},ticks:{callback:v=>v.toFixed(2)}},y:{grid:{display:false}}}}});
 }
-let sortKey='price',sortDir=1;
-function renderTable(rows){
-  const latest=uniq(rows.map(r=>r.date)).pop();
-  const day=rows.filter(r=>r.date===latest);
-  const sorted=[...day].sort((a,b)=>sortKey==='price'?(a.price-b.price)*sortDir
-    :String(a[sortKey]).localeCompare(String(b[sortKey]),'lt')*sortDir).slice(0,400);
-  const lo=Math.min(...day.map(r=>r.price)),hi=Math.max(...day.map(r=>r.price));
-  $('#tblBody').innerHTML=sorted.map(r=>{
-    const cls=r.price===lo?'lo':r.price===hi?'hi':'';
-    return `<tr><td>${r.type}</td><td>${r.brand}</td><td>${r.muni}</td><td>${r.addr||''}</td>
-      <td class="num"><span class="price-pill ${cls}">${fmt(r.price)}</span></td></tr>`;
-  }).join('');
-  $('#tblCount').textContent=`${latest} · ${day.length} degalinių`;
+let sortKey='price',sortDir=1,lastC=null;
+function renderTable(C){
+  lastC=C;const R=D.R;
+  const key={type:i=>D.types[R.t[i]],brand:i=>D.stations[R.s[i]][0],muni:i=>D.stations[R.s[i]][1],addr:i=>D.stations[R.s[i]][2],price:i=>R.p[i]};
+  const k=key[sortKey];
+  const rows=[...C.day].sort((a,b)=>sortKey==='price'?(k(a)-k(b))*sortDir:String(k(a)).localeCompare(String(k(b)),'lt')*sortDir).slice(0,400);
+  let lo=Infinity,hi=-Infinity;for(const i of C.day){if(R.p[i]<lo)lo=R.p[i];if(R.p[i]>hi)hi=R.p[i]}
+  $('#tblBody').innerHTML=rows.map(i=>{const s=D.stations[R.s[i]],cls=R.p[i]===lo?'lo':R.p[i]===hi?'hi':'';
+    return`<tr><td>${esc(D.types[R.t[i]])}</td><td>${esc(s[0])}</td><td>${esc(s[1])}</td><td>${esc(s[2])}</td>
+      <td class="num"><span class="price-pill ${cls}">${fmt(R.p[i]/1000)}</span></td></tr>`}).join('');
+  $('#tblCount').textContent=C.latest>=0?`${D.dates[C.latest]} · ${C.day.length} kainų · rodoma ${rows.length}`:'';
 }
 document.querySelectorAll('#tbl th').forEach(th=>th.onclick=()=>{
-  const k=th.dataset.k;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=k==='price'?1:-1}renderTable(filtered());
-});
-['fType','fBrand','fMuni','fAgg'].forEach(id=>$('#'+id).onchange=render);
+  const k=th.dataset.k;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=k==='price'?1:1}if(lastC)renderTable(lastC)});
+['fType','fBrand','fMuni','fAgg','fPeriod'].forEach(id=>$('#'+id).onchange=render);
 init();
 </script>
 </body>

@@ -1,33 +1,31 @@
-// scrape.mjs — ENA degalų kainų scraper (v2, 2026-09)
+// scrape.mjs — ENA degalų kainų scraper (v3, 2026-09-21)
 //
-// Pakeitimai v2:
-//  - ENA perkėlė nuorodas: dk-visa-informacija (404) → dk-pr-pr-duomenys. Tikrinam kelis URL.
-//  - SharePoint atsisiuntimas: rankinis redirect + cookie jar (Node fetch cookie
-//    per redirect'us neperneša → grįždavo login HTML). Diagnostika, kai ne xlsx.
-//  - Nuorodos be datos title'e: data imama iš paties xlsx (Pateikimo data).
-//  - Jei buvo ką traukti ir NIEKO nepavyko → exit 1 (kad GitHub praneštų, ne tyliai).
-//  - Niekada neperrašom turimų dienų tuščiu turiniu.
+// v3: nuo 2026-09-09 ENA skelbia VIENĄ suvestinį metų Excel failą
+//     („2026 m. degalų kainos (nuo 2026-04-08)"), o ne atskirus dienos failus.
+//     Kiekvieną paleidimą parsisiunčiam jį visą ir atstatom visą istoriją.
+//  - Parseris supranta 3 išdėstymus: ilgas (datos stulpelis), lapas-per-dieną,
+//    platus (datos kaip stulpelių antraštės).
+//  - data.json kompaktiškas (v2 formatas): degalinių žodynas + [degalinė, tipas, kaina*1000].
+//  - Degalinių indeksai stabilūs tarp paleidimų (mažesni git diff'ai).
+//  - Jei neišparsinta nė viena eilutė → exit 1 su diagnostika.
 
 import XLSX from 'xlsx';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 const ENA_PAGES = [
   'https://www.ena.lt/dk-pr-pr-duomenys/',
   'https://www.ena.lt/degalu-kainos-degalinese/',
-  'https://www.ena.lt/dk-visa-informacija/',
 ];
 const DATA_FILE = 'data.json';
-// SharePoint host, kuriame ENA laiko xlsx (regex forma)
 const SP_HOST_RE = process.env.SP_HOST_RE || 'ltenergagen\\.sharepoint\\.com';
+const MAX_FILES = +(process.env.MAX_FILES || 5);
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
-const LOOKBACK_DAYS = 14;
-const START_FROM = process.env.START_FROM
-  || new Date(Date.now() - LOOKBACK_DAYS * 864e5).toISOString().slice(0, 10);
-const MAX_PER_RUN = +(process.env.MAX_PER_RUN || 20);
 
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
+const pad = n => String(n).padStart(2, '0');
 
-// ---------- HTTP su cookie jar ir rankiniu redirect ----------
+// ---------- HTTP: rankinis redirect + cookie jar (SharePoint be to grąžina login HTML) ----------
 const BROWSER_HEADERS = {
   'User-Agent': UA,
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -85,7 +83,7 @@ async function fetchXlsx(url) {
   return buf;
 }
 
-// ---------- ENA HTML → nuorodos ----------
+// ---------- ENA HTML → SharePoint nuorodos ----------
 function cleanUrl(u) {
   return u.replace(/&amp;/g, '&').replace(/["'\\).]+$/, '').trim();
 }
@@ -93,133 +91,172 @@ function downloadUrl(u) {
   if (/[?&]download=1/.test(u)) return u;
   return u + (u.includes('?') ? '&' : '?') + 'download=1';
 }
-// Grąžina [{url, date|null}]. Data — iš title po nuorodos, jei yra.
 function extractLinks(html) {
-  const out = new Map(); // url (be ?e=) → {url, date}
+  const out = new Map();
   const urlRe = new RegExp('https?://' + SP_HOST_RE + '/[^\\s)"\'<>]+', 'g');
   let m;
   while ((m = urlRe.exec(html))) {
     const url = cleanUrl(m[0]);
     const key = url.split('?')[0];
-    if (out.has(key) && out.get(key).date) continue;
-    const tail = html.slice(m.index + m[0].length, m.index + m[0].length + 120);
-    const dm = tail.match(/(\d{4}-\d{2}-\d{2})/);
-    out.set(key, { url, date: dm ? dm[1] : null });
+    if (out.has(key)) continue;
+    const tail = html.slice(m.index + m[0].length, m.index + m[0].length + 200);
+    const ta = tail.match(/title="([^"]*)"/);
+    const title = (ta ? ta[1] : tail.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').slice(0, 90).trim();
+    out.set(key, { url, title });
   }
   return [...out.values()];
 }
 
 // ---------- xlsx → eilutės ----------
-function parseXlsx(buf, fallbackDate) {
-  const wb = XLSX.read(buf, { type: 'buffer' });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: '' });
-  let hi = -1;
-  for (let i = 0; i < Math.min(rows.length, 25); i++) {
-    const r = rows[i].map(c => String(c).toLowerCase());
-    if (r.some(c => /degal/.test(c)) && r.some(c => /kaina/.test(c))) { hi = i; break; }
+const DATE_RE = /(\d{4})[-./](\d{1,2})[-./](\d{1,2})/;
+function toISO(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') {
+    if (v > 40000 && v < 60000) { const d = XLSX.SSF.parse_date_code(v); return `${d.y}-${pad(d.m)}-${pad(d.d)}`; }
+    return null;
   }
-  if (hi < 0) throw new Error('Antraštės nerastos xlsx faile');
-  const H = rows[hi].map(h => String(h).trim().toLowerCase());
-  const col = (...pats) => H.findIndex(h => pats.some(p => p.test(h)));
-  const ci = {
-    brand: col(/[i\u012f]mon/, /tinkl/, /pavadinim/),
-    muni: col(/savivaldyb/),
-    addr: col(/adres/),
-    type: col(/tipas/, /r[u\u016b]\u0161/),
-    price: col(/kaina/),
-    date: col(/data/),
-  };
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  const m = String(v).match(DATE_RE);
+  return m ? `${m[1]}-${pad(m[2])}-${pad(m[3])}` : null;
+}
+function toPrice(v) {
+  if (v == null || v === '') return null;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^\d.,]/g, '').replace(',', '.'));
+  return Number.isFinite(n) && n > 0.1 && n < 10 ? n : null;
+}
+const str = v => String(v ?? '').trim();
+
+function parseWorkbook(buf) {
+  const wb = XLSX.read(buf, { type: 'buffer' });
   const out = [];
-  for (const r of rows.slice(hi + 1)) {
-    const raw = String(r[ci.price] ?? '').replace(/[^\d.,]/g, '').replace(',', '.');
-    const price = parseFloat(raw);
-    if (!price || isNaN(price) || price <= 0) continue;
-    let date = '';
-    if (ci.date >= 0) {
-      const v = r[ci.date];
-      if (v instanceof Date) date = v.toISOString().slice(0, 10);
-      else {
-        const dm = String(v ?? '').match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
-        if (dm) date = `${dm[1]}-${dm[2].padStart(2, '0')}-${dm[3].padStart(2, '0')}`;
+  const diag = [];
+  for (const name of wb.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, blankrows: false, defval: '', raw: true });
+    let hi = -1, dateCols = [];
+    for (let i = 0; i < Math.min(rows.length, 30); i++) {
+      const low = rows[i].map(c => String(c).toLowerCase());
+      const hasType = low.some(c => /degal|tipas|r[uū]š/.test(c));
+      const hasPrice = low.some(c => /kaina/.test(c));
+      const dc = rows[i].map((c, j) => (toISO(c) ? j : -1)).filter(j => j >= 0);
+      if (hasType && (hasPrice || dc.length >= 2)) { hi = i; dateCols = dc.length >= 2 ? dc : []; break; }
+    }
+    if (hi < 0) { diag.push(`[${name}] antraštė nerasta (pirma eil.: ${JSON.stringify(rows[0] || []).slice(0, 100)})`); continue; }
+
+    const H = rows[hi].map(h => String(h).trim().toLowerCase());
+    const col = (...pats) => H.findIndex((h, j) => !dateCols.includes(j) && pats.some(p => p.test(h)));
+    const ci = {
+      brand: col(/[iį]mon/, /tinkl/, /pavadinim/),
+      muni: col(/savivaldyb/),
+      addr: col(/adres/),
+      type: col(/tipas/, /r[uū]š/) >= 0 ? col(/tipas/, /r[uū]š/) : col(/degal/),
+      price: col(/kaina/),
+      date: col(/data/),
+    };
+    const sheetDate = toISO(name) || toISO(rows.slice(0, hi).flat().join(' '));
+    const format = dateCols.length ? 'platus' : ci.date >= 0 ? 'ilgas' : sheetDate ? 'lapas-per-dieną' : 'nežinomas';
+    let n = 0;
+    for (const r of rows.slice(hi + 1)) {
+      const base = { brand: str(r[ci.brand]), muni: str(r[ci.muni]), addr: str(r[ci.addr]), type: str(r[ci.type]) };
+      if (!base.type) continue;
+      if (format === 'platus') {
+        for (const j of dateCols) {
+          const price = toPrice(r[j]);
+          if (price) { out.push({ ...base, date: toISO(rows[hi][j]), price }); n++; }
+        }
+      } else {
+        const price = toPrice(r[ci.price]);
+        const date = (ci.date >= 0 ? toISO(r[ci.date]) : null) || sheetDate;
+        if (price && date) { out.push({ ...base, date, price }); n++; }
       }
     }
-    out.push({
-      date: date || fallbackDate || '',
-      brand: ci.brand >= 0 ? String(r[ci.brand] ?? '').trim() : '',
-      muni: ci.muni >= 0 ? String(r[ci.muni] ?? '').trim() : '',
-      addr: ci.addr >= 0 ? String(r[ci.addr] ?? '').trim() : '',
-      type: String(r[ci.type] ?? '').trim() || '?',
-      price: +price.toFixed(3),
-    });
+    diag.push(`[${name}] formatas=${format} antraštė=eil.${hi + 1} stulpeliai=${JSON.stringify(ci)} eilučių=${n}`);
   }
-  return out;
+  return { rows: out, diag };
+}
+
+// ---------- kompaktiškas data.json (v2) ----------
+function loadDb() {
+  if (existsSync(DATA_FILE)) {
+    try {
+      const d = JSON.parse(readFileSync(DATA_FILE, 'utf8'));
+      if (d.v === 2) return d;
+    } catch { log('data.json sugadintas — kuriu naują'); }
+  }
+  return { v: 2, stations: [], types: [], days: {} };
+}
+
+function mergeRows(db, rows) {
+  const sIdx = new Map(db.stations.map((s, i) => [s.join('|'), i]));
+  const tIdx = new Map(db.types.map((t, i) => [t, i]));
+  const byDate = new Map();
+  for (const r of rows) {
+    const sk = `${r.brand}|${r.muni}|${r.addr}`;
+    if (!sIdx.has(sk)) { sIdx.set(sk, db.stations.length); db.stations.push([r.brand, r.muni, r.addr]); }
+    if (!tIdx.has(r.type)) { tIdx.set(r.type, db.types.length); db.types.push(r.type); }
+    const s = sIdx.get(sk), t = tIdx.get(r.type);
+    if (!byDate.has(r.date)) byDate.set(r.date, new Map());
+    byDate.get(r.date).set(s * 100 + t, [s, t, Math.round(r.price * 1000)]); // dublikatai: paskutinis laimi
+  }
+  for (const [date, m] of byDate) {
+    db.days[date] = [...m.values()].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  }
+  db.days = Object.fromEntries(Object.entries(db.days).sort(([a], [b]) => a.localeCompare(b)));
+  return byDate.size;
 }
 
 // ---------- main ----------
 async function main() {
-  log('Pradžia. START_FROM =', START_FROM);
+  log('Pradžia (v3)');
+  const db = loadDb();
+  log('Turima dienų:', Object.keys(db.days).length);
 
-  let db = { updated: null, days: {}, seenUrls: [] };
-  if (existsSync(DATA_FILE)) {
-    try { db = JSON.parse(readFileSync(DATA_FILE, 'utf8')); } catch { log('data.json sugadintas, kuriu naują'); }
-  }
-  if (db.seed) { log('Seed failas — valau demo'); db = { updated: null, days: {}, seenUrls: [] }; }
-  db.days ??= {}; db.seenUrls ??= [];
-  const have = new Set(Object.keys(db.days));
-  const seen = new Set(db.seenUrls);
-  log('Turima dienų:', have.size, have.size ? `(${[...have].sort()[0]} … ${[...have].sort().pop()})` : '');
-
-  // ENA puslapis — pirmas, kuris atsidaro ir turi nuorodų
   let links = [], pageUsed = null;
   for (const p of ENA_PAGES) {
     try {
-      const html = await fetchText(p);
-      const l = extractLinks(html);
-      log(`${p} → nuorodų: ${l.length}`);
+      const l = extractLinks(await fetchText(p));
+      log(`${p} → SharePoint nuorodų: ${l.length}`);
       if (l.length) { links = l; pageUsed = p; break; }
     } catch (e) { log(`${p} → ${e.message}`); }
   }
-  if (!links.length) { log('KLAIDA: nuorodų nerasta nė viename ENA puslapyje'); process.exit(1); }
+  if (!links.length) { console.error('KLAIDA: SharePoint nuorodų nerasta nė viename ENA puslapyje'); process.exit(1); }
 
-  // Kandidatai: (a) su data ≥ START_FROM ir dar neturima; (b) be datos ir URL dar nematytas
-  const todo = links.filter(l =>
-    l.date ? (l.date >= START_FROM && !have.has(l.date)) : !seen.has(l.url.split('?')[0])
-  ).slice(0, MAX_PER_RUN);
-  log('Traukti:', todo.length, todo.map(t => t.date || '(data iš failo)').join(', ') || '(nėra)');
-
-  let ok = 0, fail = 0, firstErr = null;
-  for (const { url, date } of todo) {
-    const key = url.split('?')[0];
+  let all = [], ok = 0, firstErr = null;
+  for (const { url, title } of links.slice(0, MAX_FILES)) {
+    log(`Failas: "${title}"`);
     try {
       const buf = await fetchXlsx(downloadUrl(url));
-      const rows = parseXlsx(buf, date);
-      const realDate = rows[0]?.date || date;
-      if (!rows.length || !realDate) { log(`  ${date || key.slice(-12)}: 0 eilučių, praleidžiu`); fail++; continue; }
-      if (!date && (realDate < START_FROM || have.has(realDate))) {
-        seen.add(key); log(`  ${realDate}: (iš failo) jau turima / per sena — žymiu matytą`); continue;
-      }
-      db.days[realDate] = rows; have.add(realDate); seen.add(key);
-      log(`  ${realDate}: ✓ ${rows.length} įrašų`);
+      log(`  atsisiųsta ${(buf.length / 1024).toFixed(0)} KB`);
+      const { rows, diag } = parseWorkbook(buf);
+      diag.forEach(d => log('  ' + d));
+      all = all.concat(rows);
       ok++;
     } catch (e) {
-      log(`  ${date || key.slice(-12)}: ✗ ${e.message}`);
-      firstErr ??= e.message; fail++;
+      log(`  ✗ ${e.message}`);
+      firstErr ??= e.message;
     }
-    await new Promise(r => setTimeout(r, 700));
   }
 
-  db.updated = new Date().toISOString();
-  db.source = pageUsed;
-  db.seenUrls = [...seen].slice(-400);
-  writeFileSync(DATA_FILE, JSON.stringify(db));
-  log(`Baigta. Sėkmingai: ${ok}, nepavyko: ${fail}, viso dienų: ${Object.keys(db.days).length}`);
-
-  if (todo.length && ok === 0) {
-    console.error('\nKLAIDA: buvo ką traukti, bet nepavyko nė vienas atsisiuntimas.');
-    console.error('Pirma klaida:', firstErr);
+  if (!all.length) {
+    console.error(`\nKLAIDA: neišparsinta nė viena kainų eilutė (failų atsisiųsta: ${ok}).`);
+    if (firstErr) console.error('Pirma klaida:', firstErr);
     process.exit(1);
   }
+
+  const touched = mergeRows(db, all);
+  db.updated = new Date().toISOString();
+  db.source = pageUsed;
+  const json = JSON.stringify(db);
+  writeFileSync(DATA_FILE, json);
+
+  const dates = Object.keys(db.days);
+  const last = dates[dates.length - 1];
+  log(`Baigta. Eilučių: ${all.length}, atnaujinta dienų: ${touched}, viso dienų: ${dates.length} (${dates[0]} … ${last})`);
+  log(`Paskutinė diena ${last}: ${db.days[last].length} kainų, degalinių žodyne: ${db.stations.length}, tipai: ${db.types.join(', ')}`);
+  log(`data.json: ${(json.length / 1024).toFixed(0)} KB`);
 }
 
-main().catch(e => { console.error('FATAL:', e); process.exit(1); });
+export { parseWorkbook, mergeRows, extractLinks, toISO, toPrice };
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch(e => { console.error('FATAL:', e); process.exit(1); });
+}
