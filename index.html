@@ -147,6 +147,14 @@ details.fold>summary .tag{font-family:var(--mono);font-size:10px;background:var(
 .kpi select.kmuni{width:100%;min-width:0;margin:8px 0 6px;font-family:var(--sans);font-size:14px;font-weight:600}
 .kpi-btn:disabled{cursor:default;opacity:.6}
 .linkbtn{font:inherit;font-size:12px;background:none;border:none;color:var(--amber);cursor:pointer;padding:0;margin-top:2px}
+.btn-dest{font-family:var(--sans);font-size:13px;font-weight:650;padding:8px 14px;border-radius:8px;border:1px solid var(--line);
+  background:var(--panel2);color:var(--ink);cursor:pointer;white-space:nowrap}
+.btn-dest:hover,.btn-dest.on{border-color:#58a6ff;color:#58a6ff}
+.dest{font-size:22px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.8))}
+.st .tg{display:inline-block;font-family:var(--mono);font-size:10px;padding:0 6px;border-radius:4px;margin-left:6px;background:#1f4d2a;color:#7ee28f;vertical-align:1px}
+.st .tg.plus{background:var(--panel);color:var(--ink2)}
+.near-links{display:flex;gap:14px;flex-wrap:wrap}
+.pick-hint{color:#58a6ff}
 .field.grow{flex:2 1 240px}
 input[type=search]{font-family:var(--sans);font-size:13.5px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);
   border-radius:8px;padding:8px 10px;width:100%;min-width:0}
@@ -196,7 +204,11 @@ th.sorted{color:var(--amber)}
         <div class="field"><label>Spindulys</label><select id="mRad">
           <option value="3">3 km</option><option value="5">5 km</option><option value="10" selected>10 km</option><option value="20">20 km</option><option value="50">50 km</option>
         </select></div>
+        <div class="field"><label for="mTol">Pigiausios iki</label><select id="mTol">
+          <option value="0">tik pigiausia</option><option value="1">+1 ct</option><option value="2" selected>+2 ct</option><option value="3">+3 ct</option><option value="5">+5 ct</option>
+        </select></div>
         <button class="btn-loc" id="btnLoc" type="button">📍 Mano vieta</button>
+        <button class="btn-dest" id="btnDest" type="button" title="Pasižymėk, kur važiuoji (pvz. namai) – parodysiu degalines pakeliui">🏁 Tikslas</button>
       </div>
     </div>
     <div class="map-wrap">
@@ -397,6 +409,8 @@ function renderPromos(){
 
 // ===== žemėlapis =====
 let GEO={},MAP=null,LAYER=null,ME=null,YOU=null,YOUC=null,MAPLIST=[],MK=new Map(),HL=null;
+let DEST=null,DESTMK=null,ROUTE=null,ROUTEKM=null,ROUTEAPPROX=false,ROUTELINE=null,PICK=false,ROUTEREQ=0,BASE_NOTE='',LASTSTY=null;
+const CORR_KM=1; // kiek toli nuo maršruto laikoma „pakeliui“
 const PCOL=['#3fb950','#a3d977','#e3c74a','#f0883e','#f85149'];
 const kmDist=(a,b,c,d)=>{const r=x=>x*Math.PI/180,h=Math.sin(r(c-a)/2)**2+Math.cos(r(a))*Math.cos(r(c))*Math.sin(r(d-b)/2)**2;return 12742*Math.asin(Math.sqrt(h))};
 const shortB=b=>b.replace(/^(UAB|AB|MB|IĮ|ŽŪB|ŽŪK)\s+/,'').replace(/\s+(Lietuva|LT)$/,'');
@@ -420,14 +434,20 @@ function initMap(){
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,
     attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> autoriai'}).addTo(MAP);
   LAYER=L.layerGroup().addTo(MAP);
-  MAP.on('click',e=>setMe(e.latlng.lat,e.latlng.lng));
+  MAP.on('click',e=>PICK?setDest(e.latlng.lat,e.latlng.lng):setMe(e.latlng.lat,e.latlng.lng));
   const t=D.types.findIndex(x=>/95/.test(x));
   $('#mType').innerHTML=D.types.map((x,i)=>`<option value="${i}"${i===t?' selected':''}>${esc(x)}</option>`).join('');
-  const saved=lsGet('kuras_map');if(saved){if(saved.t!=null&&D.types[saved.t])$('#mType').value=saved.t;if(saved.rad)$('#mRad').value=saved.rad}
+  const saved=lsGet('kuras_map');if(saved){if(saved.t!=null&&D.types[saved.t])$('#mType').value=saved.t;if(saved.rad)$('#mRad').value=saved.rad;
+    if(saved.tol!=null&&[...$('#mTol').options].some(o=>+o.value===saved.tol))$('#mTol').value=saved.tol}
   ['mType','mDisc'].forEach(id=>$('#'+id).onchange=()=>{saveMapPrefs();renderMap()});
   $('#mRad').onchange=()=>{saveMapPrefs();if(ME)drawMe(true);renderNear()};
   $('#btnLoc').onclick=locate;
+  $('#mTol').onchange=()=>{saveMapPrefs();renderNear()};
+  $('#btnDest').onclick=()=>{PICK=!PICK;$('#btnDest').classList.toggle('on',PICK);
+    $('#btnDest').textContent=PICK?'🏁 Spausk žemėlapyje…':'🏁 Tikslas';
+    $('#mapNote').innerHTML=PICK?'<span class="pick-hint">Paspausk žemėlapyje, kur važiuoji (pvz. namai). Tikslas bus įsimintas.</span>':BASE_NOTE};
   renderMap();
+  if(saved&&saved.dest)setDest(saved.dest.lat,saved.dest.lon,true);
   if(saved&&saved.me)setMe(saved.me.lat,saved.me.lon);else fitMuni();
 }
 // be „Mano vietos“ žemėlapis rodo viršuje pasirinktą vietovę
@@ -438,9 +458,9 @@ function fitMuni(){
 }
 function clearMe(){
   if(YOU){MAP.removeLayer(YOU);YOU=null}if(YOUC){MAP.removeLayer(YOUC);YOUC=null}
-  ME=null;saveMapPrefs();fitMuni();renderNear();
+  ME=null;ROUTE=null;if(ROUTELINE){MAP.removeLayer(ROUTELINE);ROUTELINE=null}saveMapPrefs();fitMuni();renderNear();
 }
-function saveMapPrefs(){lsSet('kuras_map',{t:+$('#mType').value,rad:+$('#mRad').value,me:ME})}
+function saveMapPrefs(){lsSet('kuras_map',{t:+$('#mType').value,rad:+$('#mRad').value,tol:+$('#mTol').value,me:ME,dest:DEST})}
 function locate(){
   if(!navigator.geolocation){$('#mapNote').textContent='Naršyklė nepalaiko vietos nustatymo — paspausk žemėlapyje.';return}
   $('#btnLoc').textContent='📍 Ieškau…';
@@ -448,13 +468,14 @@ function locate(){
     ()=>{$('#btnLoc').textContent='📍 Mano vieta';$('#mapNote').textContent='Vietos nustatyti nepavyko (leidimas atmestas ar neprieinama) — paspausk žemėlapyje ten, kur esi.'},
     {enableHighAccuracy:false,timeout:10000,maximumAge:300000});
 }
-function setMe(lat,lon,quiet){ME={lat,lon};drawMe(!quiet);saveMapPrefs();renderNear()}
+function setMe(lat,lon,quiet){ME={lat,lon};drawMe(!quiet&&!DEST);saveMapPrefs();if(DEST)buildRoute();else renderNear()}
 function drawMe(fit){
   const rad=+$('#mRad').value*1000;
   if(!YOU)YOU=L.marker([ME.lat,ME.lon],{icon:L.divIcon({className:'',html:'<div class="you"></div>',iconSize:[16,16],iconAnchor:[8,8]}),interactive:false,zIndexOffset:1000}).addTo(MAP);
   else YOU.setLatLng([ME.lat,ME.lon]);
   if(!YOUC)YOUC=L.circle([ME.lat,ME.lon],{radius:rad,color:'#ffb000',weight:1,fillColor:'#ffb000',fillOpacity:.05,interactive:false}).addTo(MAP);
   else{YOUC.setLatLng([ME.lat,ME.lon]);YOUC.setRadius(rad)}
+  YOUC.setStyle({opacity:DEST?0:1,fillOpacity:DEST?0:.05});
   if(fit)MAP.fitBounds(YOUC.getBounds(),{padding:[20,20]});
 }
 function renderMap(){
@@ -473,9 +494,10 @@ function renderMap(){
   $('#mapTag').textContent=`${type} · ${tgt?'su nuolaidomis '+tgt.label:'be nuolaidų'}`;
   $('#legend').innerHTML=list.length?`<span>pigiau</span>${PCOL.map(c=>`<i style="background:${c}"></i>`).join('')}<span>brangiau</span><span>· ${fmt(es[0])}–${fmt(es.at(-1))} €/l</span>`:'';
   const missing=rows.size-list.length;
-  $('#mapNote').textContent=list.length
-    ?`${list.length} degalinių žemėlapyje${missing?`, ${missing} dar be koordinačių`:''}. Kainos – ENA (darbo dienų 10 val.); savaitgalio kaina su nuolaida skaičiuojama nuo paskutinės paskelbtos. Vietos – OpenStreetMap; „~" reiškia apytikslę vietą.`
+  BASE_NOTE=list.length
+    ?`${dg(list.length)} žemėlapyje${missing?`, ${missing} dar be koordinačių`:''}. Kainos – ENA (darbo dienų 10 val.); savaitgalio kaina su nuolaida skaičiuojama nuo paskutinės paskelbtos. Vietos – OpenStreetMap; „~" reiškia apytikslę vietą.`
     :'Degalinių koordinatės dar ruošiamos — žemėlapis užsipildys po artimiausio atnaujinimo.';
+  $('#mapNote').textContent=BASE_NOTE;
   renderNear();
 }
 function popupHtml(x,type,tgt){
@@ -487,40 +509,122 @@ function popupHtml(x,type,tgt){
     <div style="font-size:11.5px;color:var(--ink3);margin-top:4px">Kaina iš ${x.day}${ME?` · ${kmDist(ME.lat,ME.lon,x.lat,x.lon).toFixed(1)} km`:''}</div>
     <div style="margin-top:6px"><a href="https://www.google.com/maps/dir/?api=1&destination=${x.lat},${x.lon}" target="_blank" rel="noopener">Maršrutas ↗</a></div>`;
 }
-function stHtml(x,i,dist){
+function stHtml(x,i,sub,tag,isBest){
   const st=D.stations[x.s];
-  return`<button type="button" class="st${i===0?' best':''}" data-s="${x.s}"><span class="rk">${i+1}</span>
-    <span><span class="nm">${esc(shortB(st[0]))}</span><br><span class="ad">${esc(shortA(st[2]))}${dist!=null?` · ${approx(x)?'~':''}${dist.toFixed(1)} km`:''}</span></span>
+  return`<button type="button" class="st${isBest?' best':''}" data-s="${x.s}"><span class="rk">${i+1}</span>
+    <span><span class="nm">${esc(shortB(st[0]))}</span>${tag||''}<br><span class="ad">${esc(shortA(st[2]))}${sub?` · ${sub}`:''}</span></span>
     <span class="pr"><b>${fmt(x.e)}</b>${x.disc?`<small>−${Math.round(x.disc*100)} ct</small>`:x.day!==D.dates.at(-1)?`<small>${x.day.slice(5)}</small>`:''}</span></button>`;
 }
-function highlight(sIdx){
-  if(HL){const m=MK.get(HL);if(m)m.setStyle({radius:6,color:'#0d1117',weight:1})}
-  HL=sIdx;const m=MK.get(sIdx);if(m){m.setStyle({radius:10,color:'#ffffff',weight:3});m.bringToFront()}
+// žymeklių stilius: tinkamos (iki +X ct) – su rėmeliu, pigiausia – didžiausia, kitos (kai yra vieta/tikslas) – priblankusios
+function styleMarkers(group,best,dim){
+  LASTSTY={group,best,dim};
+  for(const[s,m]of MK){const g=group.has(s),b=s===best;
+    m.setStyle({radius:b?10:g?8:6,color:b?'#ffffff':g?'#ffb000':'#0d1117',weight:b?3:g?2:1,fillOpacity:dim&&!g?.22:.92,opacity:dim&&!g?.35:1})}
+  for(const s of group)MK.get(s)?.bringToFront();MK.get(best)?.bringToFront();
 }
+function highlight(sIdx){
+  if(LASTSTY)styleMarkers(LASTSTY.group,LASTSTY.best,LASTSTY.dim);
+  HL=sIdx;const m=MK.get(sIdx);if(m){m.setStyle({radius:11,color:'#ffffff',weight:3,fillOpacity:.95,opacity:1});m.bringToFront()}
+}
+// ---- tikslas ir maršrutas ----
+function setDest(lat,lon,quiet){
+  DEST={lat,lon};PICK=false;$('#btnDest').classList.remove('on');$('#btnDest').textContent='🏁 Tikslas';
+  if(!DESTMK)DESTMK=L.marker([lat,lon],{icon:L.divIcon({className:'',html:'<div class="dest">🏁</div>',iconSize:[24,24],iconAnchor:[4,22]}),zIndexOffset:900,interactive:false}).addTo(MAP);
+  else DESTMK.setLatLng([lat,lon]);
+  saveMapPrefs();
+  if(quiet)return;
+  if(ME)buildRoute();else{$('#mapNote').textContent='Tikslas pažymėtas. Dabar nustatyk savo vietą (📍 Mano vieta arba paspausk žemėlapyje) – parodysiu degalines pakeliui.';renderNear()}
+}
+function clearDest(){
+  if(DESTMK){MAP.removeLayer(DESTMK);DESTMK=null}if(ROUTELINE){MAP.removeLayer(ROUTELINE);ROUTELINE=null}
+  DEST=null;ROUTE=null;saveMapPrefs();$('#mapNote').textContent=BASE_NOTE;
+  if(ME)drawMe(true);renderNear();
+}
+async function buildRoute(){
+  const req=++ROUTEREQ;
+  if(ROUTELINE){MAP.removeLayer(ROUTELINE);ROUTELINE=null}ROUTE=null;
+  if(!ME||!DEST){renderNear();return}
+  $('#nearList').innerHTML='<div class="near-head">Skaičiuojamas maršrutas…</div>';
+  let coords=null,km=null,approx=false;
+  try{const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),8000);
+    const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${ME.lon.toFixed(5)},${ME.lat.toFixed(5)};${DEST.lon.toFixed(5)},${DEST.lat.toFixed(5)}?overview=full&geometries=geojson`,{signal:ctl.signal});
+    clearTimeout(to);const j=await r.json();
+    if(j.code==='Ok'&&j.routes&&j.routes[0]){coords=j.routes[0].geometry.coordinates.map(([lo,la])=>[la,lo]);km=j.routes[0].distance/1000}}catch(e){}
+  if(req!==ROUTEREQ)return;
+  if(!coords){coords=[[ME.lat,ME.lon],[DEST.lat,DEST.lon]];km=kmDist(ME.lat,ME.lon,DEST.lat,DEST.lon);approx=true}
+  ROUTE=coords;ROUTEKM=km;ROUTEAPPROX=approx;
+  ROUTELINE=L.polyline(coords,{color:'#58a6ff',weight:4,opacity:.85,dashArray:approx?'6 8':null,interactive:false}).addTo(MAP);
+  if(YOUC)YOUC.setStyle({opacity:0,fillOpacity:0});
+  MAP.fitBounds(ROUTELINE.getBounds().pad(.08));
+  $('#mapNote').textContent=approx?'Maršruto paslauga neatsakė – „pakeliui“ skaičiuojama pagal tiesią liniją iki tikslo.':BASE_NOTE;
+  renderNear();
+}
+// atstumas iki maršruto ir vieta jame (km), vietinė plokščia projekcija
+function routeMetrics(lat,lon){
+  const c=Math.cos(ROUTE[0][0]*Math.PI/180),P=[lon*c*111.32,lat*110.57];let best={off:Infinity,along:0},acc=0;
+  for(let i=0;i<ROUTE.length-1;i++){
+    const A=[ROUTE[i][1]*c*111.32,ROUTE[i][0]*110.57],B=[ROUTE[i+1][1]*c*111.32,ROUTE[i+1][0]*110.57];
+    const dx=B[0]-A[0],dy=B[1]-A[1],L2=dx*dx+dy*dy,len=Math.sqrt(L2);
+    const t=L2?Math.max(0,Math.min(1,((P[0]-A[0])*dx+(P[1]-A[1])*dy)/L2)):0;
+    const d=Math.hypot(P[0]-(A[0]+t*dx),P[1]-(A[1]+t*dy));
+    if(d<best.off)best={off:d,along:acc+t*len};acc+=len;
+  }
+  return best;
+}
+const dgw=n=>{const a=n%10,b=n%100;return a===1&&b!==11?'degalinė':a>=2&&a<=9&&!(b>=12&&b<=19)?'degalinės':'degalinių'};
+const dg=n=>`${n} ${dgw(n)}`;
+const ctTag=(x,best)=>{const d=Math.round((x.e-best.e)*100);return d<=0?'<span class="tg">pigiausia</span>':`<span class="tg plus">+${d} ct</span>`};
 function renderNear(){
   const box=$('#nearList');if(!box||!MAP)return;
-  const{rad,tgt}=mapState();
+  const{rad,tgt}=mapState(),tolC=+$('#mTol').value,tol=tolC/100+1e-9;
   if(!MAPLIST.length){box.innerHTML='';return}
-  let html,items;
-  if(!ME){
-    const m=KMUNI??-1,pool=m>=0?MAPLIST.filter(x=>D.stMuni[x.s]===m):MAPLIST;
-    items=[...pool].sort((a,b)=>a.e-b.e).slice(0,8);
-    html=`<div class="near-head">Pigiausios: <b>${m>=0?esc(D.munis[m]):'visa Lietuva'}</b>${tgt?' su nuolaidomis':''} (${pool.length} degalinės).<br>Paspausk žemėlapyje arba <b>📍 Mano vieta</b> – parodysiu per ${rad} km nuo tavęs.</div>`+items.map((x,i)=>stHtml(x,i,null)).join('');
-  }else{
+  const muniName=(KMUNI??-1)>=0?D.munis[KMUNI]:'visą Lietuvą';
+  const sd=tgt?' su nuolaidomis':'';
+  let html,items,group,best;
+  if(ME&&DEST&&ROUTE){
+    // ---- pakeliui į tikslą ----
+    const c=MAPLIST.map(x=>({...x,...routeMetrics(x.lat,x.lon)})).filter(x=>x.off<=CORR_KM);
+    if(!c.length){box.innerHTML=`<div class="near-head">Per ${CORR_KM} km nuo maršruto degalinių nerasta.<div class="near-links"><button type="button" class="linkbtn" id="destReset">✕ be tikslo</button></div></div>`;
+      box.querySelector('#destReset').onclick=clearDest;styleMarkers(new Set(),null,true);return}
+    best=c.reduce((a,b)=>b.e<a.e?b:a);
+    group=c.filter(x=>x.e<=best.e+tol).sort((a,b)=>a.along-b.along);
+    items=group.slice(0,10);
+    html=`<div class="near-head"><b>Pakeliui į 🏁</b> · ${ROUTEKM.toFixed(1)} km${ROUTEAPPROX?' (tiesia linija)':''} · iki ${CORR_KM} km nuo kelio · ${dg(c.length)}${sd}
+        <div class="near-links"><button type="button" class="linkbtn" id="destReset">✕ be tikslo</button><button type="button" class="linkbtn" id="meReset">✕ grįžti į ${esc(muniName)}</button></div></div>
+      <div class="save">Pigiausia pakeliui – <b>${esc(shortB(D.stations[best.s][0]))} ${fmt(best.e)}</b>, po ${best.along.toFixed(1)} km.<br>
+        ${tolC?`Iki +${tolC} ct: <b>${group.length}</b> ${dgw(group.length)} – išdėstytos ta tvarka, kuria jas pravažiuosi.`:'Rodoma tik pigiausia.'}</div>`
+      +items.map((x,i)=>stHtml(x,i,`${x.along.toFixed(1)} km kelyje · ${Math.round(x.off*1000)} m nuo kelio`,ctTag(x,best),x.e<=best.e+1e-9)).join('');
+  }else if(ME){
+    // ---- aplink mano vietą ----
     const near=MAPLIST.map(x=>({...x,dist:kmDist(ME.lat,ME.lon,x.lat,x.lon)})).filter(x=>x.dist<=rad);
-    if(!near.length){box.innerHTML=`<div class="near-head">Per ${rad} km degalinių nerasta – padidink spindulį.</div>`;highlight(null);return}
-    items=[...near].sort((a,b)=>a.e-b.e||a.dist-b.dist);
-    const best=items[0],nearest=[...near].sort((a,b)=>a.dist-b.dist)[0],diff=nearest.e-best.e;
-    const save=best.s!==nearest.s&&diff>=0.005
-      ?`<div class="save">Pigiausia per ${rad} km – <b>${esc(shortB(D.stations[best.s][0]))} ${fmt(best.e)}</b> (${best.dist.toFixed(1)} km).<br>Artimiausia (${esc(shortB(D.stations[nearest.s][0]))}, ${nearest.dist.toFixed(1)} km) – ${fmt(nearest.e)}.<br>Skirtumas <b>${Math.round(diff*100)} ct/l ≈ ${(diff*50).toFixed(2).replace('.',',')} € už 50 l</b>.</div>`
-      :`<div class="save">Artimiausia degalinė (${esc(shortB(D.stations[nearest.s][0]))}, ${nearest.dist.toFixed(1)} km) ir yra pigiausia per ${rad} km${tgt?' su nuolaidomis':''}.</div>`;
-    const mn=(KMUNI??-1)>=0?D.munis[KMUNI]:'visą Lietuvą';
-    html=`<div class="near-head"><b>${near.length}</b> degalinės per ${rad} km · rikiuota pagal kainą${tgt?' su nuolaidomis':''}<br><button type="button" class="linkbtn" id="meReset">✕ grįžti į ${esc(mn)}</button></div>`+save+items.slice(0,8).map((x,i)=>stHtml(x,i,x.dist)).join('');
-    items=items.slice(0,8);
+    if(!near.length){box.innerHTML=`<div class="near-head">Per ${rad} km degalinių nerasta – padidink spindulį.<div class="near-links"><button type="button" class="linkbtn" id="meReset">✕ grįžti į ${esc(muniName)}</button></div></div>`;
+      box.querySelector('#meReset').onclick=clearMe;styleMarkers(new Set(),null,true);return}
+    best=near.reduce((a,b)=>b.e<a.e||(b.e===a.e&&b.dist<a.dist)?b:a);
+    group=near.filter(x=>x.e<=best.e+tol).sort((a,b)=>a.dist-b.dist);
+    const nearest=near.reduce((a,b)=>b.dist<a.dist?b:a),inG=group.some(x=>x.s===nearest.s);
+    items=group.slice(0,10);
+    html=`<div class="near-head"><b>${near.length}</b> ${dgw(near.length)} per ${rad} km${sd}
+        <div class="near-links"><button type="button" class="linkbtn" id="meReset">✕ grįžti į ${esc(muniName)}</button></div></div>
+      <div class="save">Pigiausia – <b>${esc(shortB(D.stations[best.s][0]))} ${fmt(best.e)}</b> (${best.dist.toFixed(1)} km).<br>
+        ${tolC?`Iki +${tolC} ct: <b>${group.length}</b> ${dgw(group.length)} – rikiuota pagal atstumą.`:'Rodoma tik pigiausia.'}
+        ${!inG?`<br>Artimiausia (${esc(shortB(D.stations[nearest.s][0]))}, ${nearest.dist.toFixed(1)} km) – ${fmt(nearest.e)}, +${Math.round((nearest.e-best.e)*100)} ct.`:''}
+        <br><span style="color:var(--ink3)">Važiuoji kur nors? Spausk 🏁 Tikslas – parodysiu pakeliui.</span></div>`
+      +items.map((x,i)=>stHtml(x,i,`${approx(x)?'~':''}${x.dist.toFixed(1)} km`,ctTag(x,best),x.e<=best.e+1e-9)).join('');
+  }else{
+    // ---- pasirinkta vietovė ----
+    const m=KMUNI??-1,pool=m>=0?MAPLIST.filter(x=>D.stMuni[x.s]===m):MAPLIST;
+    if(!pool.length){box.innerHTML='';return}
+    best=pool.reduce((a,b)=>b.e<a.e?b:a);
+    group=pool.filter(x=>x.e<=best.e+tol).sort((a,b)=>a.e-b.e);
+    items=(group.length>=3?group:[...pool].sort((a,b)=>a.e-b.e)).slice(0,10);
+    html=`<div class="near-head">Pigiausios: <b>${m>=0?esc(D.munis[m]):'visa Lietuva'}</b>${sd} (${dg(pool.length)})${tolC?` · iki +${tolC} ct: <b>${group.length}</b>`:''}.<br>
+      Paspausk žemėlapyje arba <b>📍 Mano vieta</b> – parodysiu per ${rad} km nuo tavęs${DEST?', o su 🏁 tikslu – pakeliui':''}.</div>`
+      +items.map((x,i)=>stHtml(x,i,'',ctTag(x,best),x.e<=best.e+1e-9)).join('');
   }
   box.innerHTML=html;
   const rb=box.querySelector('#meReset');if(rb)rb.onclick=clearMe;
-  highlight(items[0]?items[0].s:null);
+  const db=box.querySelector('#destReset');if(db)db.onclick=clearDest;
+  styleMarkers(new Set(group.map(x=>x.s)),best.s,!!ME);
   box.querySelectorAll('.st').forEach(b=>b.onclick=()=>{const s=+b.dataset.s,m=MK.get(s);if(!m)return;
     box.querySelectorAll('.st').forEach(x=>x.classList.toggle('sel',x===b));highlight(s);MAP.flyTo(m.getLatLng(),Math.max(MAP.getZoom(),14),{duration:.5});m.openPopup()});
 }
@@ -589,7 +693,7 @@ function renderKPIs(){
   const sel=document.createElement('div');sel.className='kpi';sel.style.setProperty('--accent','var(--amber)');
   sel.innerHTML=`<label class="lbl" for="kMuni">Pigiausia vietovėje</label>
     <select id="kMuni" class="kmuni"><option value="-1">Visa Lietuva</option>${D.munis.map((x,i)=>`<option value="${i}"${i===m?' selected':''}>${esc(x)}</option>`).join('')}</select>
-    <div class="delta flat">${D.dates[L]} · ${stN.size} degalinių</div>`;
+    <div class="delta flat">${D.dates[L]} · ${dg(stN.size)}</div>`;
   box.appendChild(sel);
   sel.querySelector('#kMuni').onchange=e=>{KMUNI=+e.target.value;lsSet('kuras_kmuni',KMUNI<0?'*':D.munis[KMUNI]);renderKPIs();if(!ME){fitMuni();renderNear()}};
   for(const t of D.types.map((_,i)=>i).slice(0,4)){
