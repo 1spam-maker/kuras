@@ -1,13 +1,22 @@
 name: Kuro kainų scrape
 
+# ENA paskelbia dienos (10 val.) kainas tik po 10 val. LT, todėl:
+#  - rytinis paleidimas (~7:47 LT) garantuoja, kad iki 8 val. puslapyje yra
+#    naujausia paskelbta (praėjusios darbo dienos) informacija, net jei
+#    vakarykščiai paleidimai vėlavo ar nepavyko;
+#  - dieniniai paleidimai paima šios dienos kainas, kai tik ENA jas paskelbia.
+# Laikas UTC. LT vasarą = UTC+3, žiemą (nuo 10-25) = UTC+2.
+# Minutės ne :00/:05, nes valandų pradžioje GitHub labiausiai vėlina paleidimus.
 on:
   schedule:
-    # 08:05 UTC = 11:05 LT (vasarą). ENA failai paskelbiami iki 10 val. LT.
-    - cron: '5 8 * * 1-5'
-  workflow_dispatch:        # rankinis paleidimas mygtuku
+    - cron: '47 4 * * 2-6'    # ~07:47 LT vasarą / 06:47 žiemą (an.–šešt.)
+    - cron: '17 9 * * 1-5'    # ~12:17 / 11:17 LT
+    - cron: '43 11 * * 1-5'   # ~14:43 / 13:43 LT
+    - cron: '13 14 * * 1-5'   # ~17:13 / 16:13 LT (pakartojimas, jei ENA vėlavo)
+  workflow_dispatch:          # rankinis paleidimas mygtuku
 
 permissions:
-  contents: write           # leisti commit'inti data.json
+  contents: write             # leisti commit'inti data.json
 
 concurrency:
   group: scrape
@@ -17,21 +26,17 @@ jobs:
   scrape:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install deps
         run: npm install xlsx --no-save
 
       - name: Run scraper
         run: node scrape.mjs
-        env:
-          # Pirmas paleidimas užfiksuos nuo šios datos. Palik tuščią = nuo šiandien.
-          # Norint istorijos nuo konkrečios datos: '2026-06-01'
-          START_FROM: '2026-06-01'
 
       - name: Commit jei pasikeitė
         run: |

@@ -1,4 +1,6 @@
-// scrape.mjs — ENA degalų kainų scraper (v3, 2026-09-21)
+// scrape.mjs — ENA degalų kainų scraper (v3.1, 2026-10-19)
+//
+// v3.1: data.json perrašomas tik pasikeitus duomenims (keli paleidimai per dieną be tuščių commit'ų).
 //
 // v3: nuo 2026-09-09 ENA skelbia VIENĄ suvestinį metų Excel failą
 //     („2026 m. degalų kainos (nuo 2026-04-08)"), o ne atskirus dienos failus.
@@ -209,6 +211,8 @@ async function main() {
   log('Pradžia (v3)');
   const db = loadDb();
   log('Turima dienų:', Object.keys(db.days).length);
+  const snapshot = d => JSON.stringify([d.stations, d.types, d.days]);
+  const before = snapshot(db);
 
   let links = [], pageUsed = null;
   for (const p of ENA_PAGES) {
@@ -243,6 +247,11 @@ async function main() {
   }
 
   const touched = mergeRows(db, all);
+  if (snapshot(db) === before) {
+    const ds = Object.keys(db.days);
+    log(`Nieko naujo — ENA failas nepasikeitė (naujausia diena ${ds[ds.length - 1]}). data.json neliečiamas.`);
+    return;
+  }
   db.updated = new Date().toISOString();
   db.source = pageUsed;
   const json = JSON.stringify(db);
