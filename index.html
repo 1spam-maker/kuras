@@ -146,6 +146,7 @@ details.fold>summary .tag{font-family:var(--mono);font-size:10px;background:var(
 .kpi .where span{color:var(--ink3);font-family:var(--mono);font-size:11px}
 .kpi select.kmuni{width:100%;min-width:0;margin:8px 0 6px;font-family:var(--sans);font-size:14px;font-weight:600}
 .kpi-btn:disabled{cursor:default;opacity:.6}
+.linkbtn{font:inherit;font-size:12px;background:none;border:none;color:var(--amber);cursor:pointer;padding:0;margin-top:2px}
 .field.grow{flex:2 1 240px}
 input[type=search]{font-family:var(--sans);font-size:13.5px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);
   border-radius:8px;padding:8px 10px;width:100%;min-width:0}
@@ -427,7 +428,17 @@ function initMap(){
   $('#mRad').onchange=()=>{saveMapPrefs();if(ME)drawMe(true);renderNear()};
   $('#btnLoc').onclick=locate;
   renderMap();
-  if(saved&&saved.me)setMe(saved.me.lat,saved.me.lon,true);
+  if(saved&&saved.me)setMe(saved.me.lat,saved.me.lon);else fitMuni();
+}
+// be „Mano vietos“ žemėlapis rodo viršuje pasirinktą vietovę
+function fitMuni(){
+  if(!MAP||ME)return;
+  const m=KMUNI??-1,pts=(m>=0?MAPLIST.filter(x=>D.stMuni[x.s]===m):MAPLIST).map(x=>[x.lat,x.lon]);
+  if(pts.length)MAP.fitBounds(L.latLngBounds(pts),{padding:[30,30],maxZoom:13});else MAP.setView([55.25,23.9],7);
+}
+function clearMe(){
+  if(YOU){MAP.removeLayer(YOU);YOU=null}if(YOUC){MAP.removeLayer(YOUC);YOUC=null}
+  ME=null;saveMapPrefs();fitMuni();renderNear();
 }
 function saveMapPrefs(){lsSet('kuras_map',{t:+$('#mType').value,rad:+$('#mRad').value,me:ME})}
 function locate(){
@@ -492,8 +503,9 @@ function renderNear(){
   if(!MAPLIST.length){box.innerHTML='';return}
   let html,items;
   if(!ME){
-    items=[...MAPLIST].sort((a,b)=>a.e-b.e).slice(0,6);
-    html=`<div class="near-head">Paspausk žemėlapyje arba <b>📍 Mano vieta</b> — parodysiu pigiausias per ${rad} km.<br>Kol kas – pigiausios visoje Lietuvoje:</div>`+items.map((x,i)=>stHtml(x,i,null)).join('');
+    const m=KMUNI??-1,pool=m>=0?MAPLIST.filter(x=>D.stMuni[x.s]===m):MAPLIST;
+    items=[...pool].sort((a,b)=>a.e-b.e).slice(0,8);
+    html=`<div class="near-head">Pigiausios: <b>${m>=0?esc(D.munis[m]):'visa Lietuva'}</b>${tgt?' su nuolaidomis':''} (${pool.length} degalinės).<br>Paspausk žemėlapyje arba <b>📍 Mano vieta</b> – parodysiu per ${rad} km nuo tavęs.</div>`+items.map((x,i)=>stHtml(x,i,null)).join('');
   }else{
     const near=MAPLIST.map(x=>({...x,dist:kmDist(ME.lat,ME.lon,x.lat,x.lon)})).filter(x=>x.dist<=rad);
     if(!near.length){box.innerHTML=`<div class="near-head">Per ${rad} km degalinių nerasta – padidink spindulį.</div>`;highlight(null);return}
@@ -502,10 +514,12 @@ function renderNear(){
     const save=best.s!==nearest.s&&diff>=0.005
       ?`<div class="save">Pigiausia per ${rad} km – <b>${esc(shortB(D.stations[best.s][0]))} ${fmt(best.e)}</b> (${best.dist.toFixed(1)} km).<br>Artimiausia (${esc(shortB(D.stations[nearest.s][0]))}, ${nearest.dist.toFixed(1)} km) – ${fmt(nearest.e)}.<br>Skirtumas <b>${Math.round(diff*100)} ct/l ≈ ${(diff*50).toFixed(2).replace('.',',')} € už 50 l</b>.</div>`
       :`<div class="save">Artimiausia degalinė (${esc(shortB(D.stations[nearest.s][0]))}, ${nearest.dist.toFixed(1)} km) ir yra pigiausia per ${rad} km${tgt?' su nuolaidomis':''}.</div>`;
-    html=`<div class="near-head"><b>${near.length}</b> degalinės per ${rad} km · rikiuota pagal kainą${tgt?' su nuolaidomis':''}</div>`+save+items.slice(0,8).map((x,i)=>stHtml(x,i,x.dist)).join('');
+    const mn=(KMUNI??-1)>=0?D.munis[KMUNI]:'visą Lietuvą';
+    html=`<div class="near-head"><b>${near.length}</b> degalinės per ${rad} km · rikiuota pagal kainą${tgt?' su nuolaidomis':''}<br><button type="button" class="linkbtn" id="meReset">✕ grįžti į ${esc(mn)}</button></div>`+save+items.slice(0,8).map((x,i)=>stHtml(x,i,x.dist)).join('');
     items=items.slice(0,8);
   }
   box.innerHTML=html;
+  const rb=box.querySelector('#meReset');if(rb)rb.onclick=clearMe;
   highlight(items[0]?items[0].s:null);
   box.querySelectorAll('.st').forEach(b=>b.onclick=()=>{const s=+b.dataset.s,m=MK.get(s);if(!m)return;
     box.querySelectorAll('.st').forEach(x=>x.classList.toggle('sel',x===b));highlight(s);MAP.flyTo(m.getLatLng(),Math.max(MAP.getZoom(),14),{duration:.5});m.openPopup()});
@@ -528,9 +542,9 @@ async function init(){
     try{const g=await fetch('geo.json?t='+Date.now());if(g.ok)GEO=((await g.json()).stations)||{}}catch(e){GEO={}}
     $('#loading').style.display='none';$('#dash').style.display='block';
     render();
+    renderKPIs();
     initMap();
     initTable();
-    renderKPIs();
   }catch(e){
     $('#loading').style.display='none';const el=$('#error');el.style.display='block';el.textContent='⚠️ '+e.message;
   }
@@ -577,7 +591,7 @@ function renderKPIs(){
     <select id="kMuni" class="kmuni"><option value="-1">Visa Lietuva</option>${D.munis.map((x,i)=>`<option value="${i}"${i===m?' selected':''}>${esc(x)}</option>`).join('')}</select>
     <div class="delta flat">${D.dates[L]} · ${stN.size} degalinių</div>`;
   box.appendChild(sel);
-  sel.querySelector('#kMuni').onchange=e=>{KMUNI=+e.target.value;lsSet('kuras_kmuni',KMUNI<0?'*':D.munis[KMUNI]);renderKPIs()};
+  sel.querySelector('#kMuni').onchange=e=>{KMUNI=+e.target.value;lsSet('kuras_kmuni',KMUNI<0?'*':D.munis[KMUNI]);renderKPIs();if(!ME){fitMuni();renderNear()}};
   for(const t of D.types.map((_,i)=>i).slice(0,4)){
     const cur=minForType(t,undefined,m);
     const el=document.createElement('button');el.type='button';el.className='kpi kpi-btn';el.style.setProperty('--accent',pickColor(D.types[t]));
