@@ -227,7 +227,7 @@ th.sorted{color:var(--amber)}
   <div class="card full promos" id="promoCard" style="display:none">
     <h2>Degalinių akcijos <span class="tag" id="promoTag"></span></h2>
     <div class="promo-list" id="promoList"></div>
-    <div class="promo-note">Nuolaidos atimamos iš ENA paskelbtų kainų (darbo dienų 10 val.). Savaitgalio kainų ENA neskelbia, todėl savaitgalio kaina su nuolaida skaičiuojama nuo paskutinės paskelbtos kainos ir yra apytikslė. Tam pačiam tinklui tą pačią dieną taikoma didžiausia nuolaida, jos nesumuojamos. Sąlygas visada pasitikrink tinklo puslapyje; sąrašas redaguojamas faile <code>akcijos.json</code>.</div>
+    <div class="promo-note">Nuolaidos atimamos iš ENA paskelbtų kainų (darbo dienų 10 val.). Savaitgalio kainų ENA neskelbia, todėl savaitgalio kaina su nuolaida skaičiuojama nuo paskutinės paskelbtos kainos ir yra apytikslė. Tam pačiam tinklui tą pačią dieną taikoma didžiausia nuolaida, jos nesumuojamos. Sąlygas visada pasitikrink tinklo puslapyje.</div>
   </div>
 
   <details class="fold" id="foldCharts">
@@ -665,7 +665,7 @@ function renderNear(){
 async function init(){
   try{
     const r=await fetch('data.json?t='+Date.now());
-    if(!r.ok)throw new Error('data.json nerastas (HTTP '+r.status+')');
+    if(!r.ok)throw new Error('Nepavyko įkelti duomenų. Pabandyk vėliau.');
     const raw=await r.json();D=build(raw);computeVol();
     try{const a=await fetch('akcijos.json?t='+Date.now());if(a.ok)PROMOS=((await a.json()).akcijos)||[]}catch(e){PROMOS=[]}
     if(raw.updated)$('#updInfo').textContent='Atnaujinta '+new Intl.DateTimeFormat('lt-LT',{timeZone:'Europe/Vilnius',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(raw.updated))+' · tikrinama ~8, 12, 15 ir 17 val. darbo dienomis';
