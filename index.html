@@ -140,6 +140,17 @@ details.fold>summary:hover{color:var(--ink)}
 details.fold>summary .tag{font-family:var(--mono);font-size:10px;background:var(--panel2);padding:2px 7px;border-radius:5px;color:var(--ink3);text-transform:none;letter-spacing:0;font-weight:400}
 .fold-body{padding:0 18px 18px}
 .fold-body .controls{background:var(--panel2)}
+.field.grow{flex:2 1 240px}
+input[type=search]{font-family:var(--sans);font-size:13.5px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);
+  border-radius:8px;padding:8px 10px;width:100%;min-width:0}
+input[type=search]:focus{outline:none;border-color:var(--amber)}
+input[type=search]::placeholder{color:var(--ink3)}
+.tbl-info{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--ink2);margin:0 2px 10px;font-family:var(--mono)}
+.tbl-info button{font:inherit;background:none;border:none;color:var(--amber);cursor:pointer;padding:0}
+.pin{background:none;border:1px solid var(--line);border-radius:6px;color:var(--ink2);cursor:pointer;padding:2px 7px;font-size:12px}
+.pin:hover{border-color:var(--amber);color:var(--ink)}
+td .dt{display:block;font-size:10.5px;color:var(--ink3);font-family:var(--mono)}
+th.sorted{color:var(--amber)}
 @media(max-width:600px){.kpis{grid-template-columns:1fr 1fr;gap:10px}.kpi{padding:12px 14px}.kpi .val{font-size:22px}.kpi .lbl{font-size:10px}
   .kpi .delta{font-size:11px}.wrap{padding:16px 12px 60px}.card{padding:14px}}
 </style>
@@ -236,11 +247,23 @@ details.fold>summary .tag{font-family:var(--mono);font-size:10px;background:var(
   <details class="fold" id="foldTable">
     <summary>Visos kainos <span class="tag" id="tblCount"></span></summary>
     <div class="fold-body">
+    <div class="controls" role="search">
+      <div class="field grow"><label for="tQ">Paieška</label><input id="tQ" type="search" placeholder="pvz. Viada, Kaunas, Savanorių pr." autocomplete="off"></div>
+      <div class="field"><label for="tType">Degalai</label><select id="tType"></select></div>
+      <div class="field"><label for="tBrand">Tinklas</label><select id="tBrand"></select></div>
+      <div class="field"><label for="tMuni">Savivaldybė</label><select id="tMuni"></select></div>
+      <div class="field"><label for="tDisc">Kaina su nuolaida</label><select id="tDisc">
+        <option value="none">Be nuolaidų (ENA)</option><option value="today">Šiandien</option>
+        <option value="1">Pirmadienį</option><option value="2">Antradienį</option><option value="3">Trečiadienį</option>
+        <option value="4">Ketvirtadienį</option><option value="5">Penktadienį</option><option value="6">Šeštadienį</option><option value="7">Sekmadienį</option>
+      </select></div>
+    </div>
+    <div class="tbl-info"><span id="tblInfo"></span><button type="button" id="tReset">Išvalyti filtrus</button></div>
     <div style="overflow-x:auto"><table id="tbl" class="nodisc">
       <thead><tr>
         <th data-k="type">Tipas</th><th data-k="brand">Tinklas</th>
         <th data-k="muni">Savivaldybė</th><th data-k="addr">Adresas</th>
-        <th data-k="price" class="num">Kaina €/l</th><th data-k="eff" class="num eff-col">Su nuolaida</th>
+        <th data-k="price" class="num">Kaina €/l</th><th data-k="eff" class="num eff-col">Su nuolaida</th><th aria-label="Rodyti žemėlapyje"></th>
       </tr></thead><tbody id="tblBody"></tbody>
     </table></div>
     </div>
@@ -500,6 +523,7 @@ async function init(){
     $('#loading').style.display='none';$('#dash').style.display='block';
     render();
     initMap();
+    initTable();
   }catch(e){
     $('#loading').style.display='none';const el=$('#error');el.style.display='block';el.textContent='⚠️ '+e.message;
   }
@@ -509,7 +533,7 @@ function pickColor(t){const s=(t||'').toLowerCase();
   if(/dyzel/.test(s))return'#3fb950';if(/snd|duj|lpg/.test(s))return'#58a6ff';if(/98|premium/.test(s))return'#f85149';return'#ffb000'}
 function render(){
   const f=filt(),C=compute(D,f);
-  renderKPIs(C,f);renderTrend(C,f);renderType(C);renderBrand(C,f);renderTable(C);renderPromos();
+  renderKPIs(C,f);renderTrend(C,f);renderType(C);renderBrand(C,f);renderPromos();
   $('#snapDate').textContent=C.latest>=0?D.dates[C.latest]:'';
 }
 function renderKPIs(C,f){
@@ -564,26 +588,67 @@ function renderBrand(C,f){
         return`${d.v>0?'+':''}${d.v.toFixed(1)} ct · vid. ${d.avg.toFixed(3)} €/l · ${d.n} degalinės`}}}},
       scales:{x:{grid:{color:C_GRID},ticks:{callback:v=>(v>0?'+':'')+v+' ct'}},y:{grid:{display:false}}}}});
 }
-let sortKey='price',sortDir=1,lastC=null;
-function renderTable(C){
-  lastC=C;const R=D.R;
-  const key={type:i=>D.types[R.t[i]],brand:i=>D.stations[R.s[i]][0],muni:i=>D.stations[R.s[i]][1],addr:i=>D.stations[R.s[i]][2],price:i=>R.p[i],eff:i=>C.eff.get(i)};
-  if(sortKey==='eff'&&!C.tgt)sortKey='price';
-  $('#tbl').classList.toggle('nodisc',!C.tgt);
-  const k=key[sortKey],num=sortKey==='price'||sortKey==='eff';
-  const rows=[...C.day].sort((a,b)=>num?(k(a)-k(b))*sortDir:String(k(a)).localeCompare(String(k(b)),'lt')*sortDir).slice(0,400);
-  let lo=Infinity,hi=-Infinity;for(const i of C.day){if(R.p[i]<lo)lo=R.p[i];if(R.p[i]>hi)hi=R.p[i]}
-  $('#tblBody').innerHTML=rows.map(i=>{const s=D.stations[R.s[i]],cls=R.p[i]===lo?'lo':R.p[i]===hi?'hi':'';
-    return`<tr><td>${esc(D.types[R.t[i]])}</td><td>${esc(s[0])}</td><td>${esc(s[1])}</td><td>${esc(s[2])}</td>
-      <td class="num"><span class="price-pill ${cls}">${fmt(R.p[i]/1000)}</span></td>
-      <td class="num eff-col">${C.tgt?(()=>{const e=C.eff.get(i),d=Math.round((R.p[i]/1000-e)*100);
-        return d>0?`<span class="eff">${fmt(e)}<small>−${d} ct</small></span>`:`<span style="color:var(--ink3);font-family:var(--mono)">${fmt(e)}</span>`})():''}</td></tr>`}).join('');
-  $('#tblCount').textContent=C.latest>=0?`${D.dates[C.latest]} · ${C.day.length} kainų · rodoma ${rows.length}${C.tgt?' · nuolaidos '+C.tgt.label:''}`:'';
+// ===== Visos kainos: savarankiška lentelė su filtrais =====
+let sortKey='price',sortDir=1,qTimer=null;
+const fold=t=>String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+let ST_TEXT=null; // degalinės paieškos tekstas (sukuriamas vieną kartą)
+function initTable(){
+  const opt=(arr,all)=>`<option value="-1">${all}</option>`+arr.map((v,i)=>`<option value="${i}">${esc(v)}</option>`).join('');
+  $('#tType').innerHTML=opt(D.types,'Visi degalai');
+  $('#tBrand').innerHTML=opt(D.brands,'Visi tinklai');
+  $('#tMuni').innerHTML=opt(D.munis,'Visa Lietuva');
+  ST_TEXT=D.stations.map(s=>fold(s.join(' ')));
+  ['tType','tBrand','tMuni'].forEach(id=>$('#'+id).onchange=renderTable);
+  $('#tDisc').onchange=()=>{if($('#tDisc').value!=='none'){sortKey='eff';sortDir=1}renderTable()};
+  $('#tQ').oninput=()=>{clearTimeout(qTimer);qTimer=setTimeout(renderTable,150)};
+  $('#tReset').onclick=()=>{$('#tQ').value='';['tType','tBrand','tMuni'].forEach(id=>$('#'+id).value='-1');$('#tDisc').value='none';if(sortKey==='eff')sortKey='price';renderTable()};
+  document.querySelectorAll('#tbl th[data-k]').forEach(th=>th.onclick=()=>{
+    const k=th.dataset.k;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=1}renderTable()});
+  renderTable();
 }
-document.querySelectorAll('#tbl th').forEach(th=>th.onclick=()=>{
-  const k=th.dataset.k;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=k==='price'?1:1}if(lastC)renderTable(lastC)});
+function renderTable(){
+  if(!ST_TEXT)return;
+  const t=+$('#tType').value,b=+$('#tBrand').value,m=+$('#tMuni').value,tgt=discTarget($('#tDisc').value);
+  const words=fold($('#tQ').value).split(/\s+/).filter(Boolean);
+  const types=t>=0?[t]:D.types.map((_,i)=>i),latest=D.dates.at(-1),rows=[];
+  for(const ti of types)for(const[s,v]of latestByStation(ti)){
+    if(b>=0&&D.stBrand[s]!==b)continue;if(m>=0&&D.stMuni[s]!==m)continue;
+    if(words.length){const txt=ST_TEXT[s]+' '+fold(D.types[ti]);if(!words.every(w=>txt.includes(w)))continue}
+    const st=D.stations[s],pr=tgt?discInfo(st[0],D.types[ti],tgt.date):null,disc=pr?pr.nuolaida_ct/100:0;
+    rows.push({s,t:ti,p:v.p,e:v.p-disc,disc,day:D.dates[v.d]});
+  }
+  if(sortKey==='eff'&&!tgt)sortKey='price';
+  $('#tbl').classList.toggle('nodisc',!tgt);
+  document.querySelectorAll('#tbl th[data-k]').forEach(th=>th.classList.toggle('sorted',th.dataset.k===sortKey));
+  const key={type:r=>D.types[r.t],brand:r=>D.stations[r.s][0],muni:r=>D.stations[r.s][1],addr:r=>D.stations[r.s][2],price:r=>r.p,eff:r=>r.e};
+  const k=key[sortKey],num=sortKey==='price'||sortKey==='eff';
+  rows.sort((a,c)=>num?(k(a)-k(c))*sortDir||a.p-c.p:String(k(a)).localeCompare(String(k(c)),'lt')*sortDir||a.p-c.p);
+  // pigiausia/brangiausia žymima to paties tipo ribose
+  const lo={},hi={};for(const r of rows){lo[r.t]=Math.min(lo[r.t]??Infinity,r.p);hi[r.t]=Math.max(hi[r.t]??-Infinity,r.p)}
+  const shown=rows.slice(0,500);
+  $('#tblBody').innerHTML=shown.map(r=>{const st=D.stations[r.s],cls=r.p===lo[r.t]?'lo':r.p===hi[r.t]?'hi':'';
+    const hasGeo=!!GEO[st.join('|')];
+    return`<tr><td>${esc(D.types[r.t])}</td><td>${esc(st[0])}</td><td>${esc(st[1])}</td><td>${esc(st[2])}</td>
+      <td class="num"><span class="price-pill ${cls}">${fmt(r.p)}</span>${r.day!==latest?`<span class="dt">${r.day.slice(5)}</span>`:''}</td>
+      <td class="num eff-col">${tgt?(r.disc?`<span class="eff">${fmt(r.e)}<small>−${Math.round(r.disc*100)} ct</small></span>`:`<span style="color:var(--ink3);font-family:var(--mono)">${fmt(r.e)}</span>`):''}</td>
+      <td>${hasGeo?`<button type="button" class="pin" data-s="${r.s}" data-t="${r.t}" title="Rodyti žemėlapyje" aria-label="Rodyti žemėlapyje">📍</button>`:''}</td></tr>`}).join('')
+    ||`<tr><td colspan="7" style="color:var(--ink3);padding:16px 10px">Nieko nerasta pagal šiuos filtrus.</td></tr>`;
+  const filtered=words.length||t>=0||b>=0||m>=0;
+  $('#tblInfo').textContent=`${rows.length} kainų${shown.length<rows.length?` · rodoma pirmos ${shown.length}`:''}${tgt?' · nuolaidos '+tgt.label:''} · naujausios kainos (${latest})`;
+  $('#tReset').style.visibility=filtered||tgt?'visible':'hidden';
+  $('#tblCount').textContent=`${latest} · ${rows.length} kainų`;
+  $('#tblBody').querySelectorAll('.pin').forEach(btn=>btn.onclick=()=>showOnMap(+btn.dataset.s,+btn.dataset.t));
+}
+// lentelė → žemėlapis: perjungia degalų tipą, nuslenka iki žemėlapio, atidaro degalinę
+function showOnMap(s,t){
+  if(!MAP)return;
+  if(+$('#mType').value!==t){$('#mType').value=t;saveMapPrefs();renderMap()}
+  document.querySelector('.mapcard').scrollIntoView({behavior:'smooth',block:'start'});
+  const m=MK.get(s);if(!m)return;
+  highlight(s);setTimeout(()=>{MAP.setView(m.getLatLng(),15);m.openPopup()},350);
+}
 ['fType','fBrand','fMuni','fAgg','fPeriod'].forEach(id=>$('#'+id).onchange=render);
-$('#fDisc').onchange=()=>{if($('#fDisc').value!=='none'){sortKey='eff';sortDir=1}render()};
+$('#fDisc').onchange=render;
 $('#foldCharts').addEventListener('toggle',e=>{if(e.target.open)render()});
 init();
 </script>
