@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kuro kainos · LT</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
 :root{
   --bg:#0d1117;--panel:#161b22;--panel2:#1c2330;--line:#2a3340;
@@ -86,6 +88,59 @@ footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);color:v
 .nodisc .eff-col{display:none}
 .eff{font-family:var(--mono);font-weight:600;color:var(--green)}
 .eff small{color:var(--ink3);font-weight:400;margin-left:4px}
+/* v5: žemėlapis + suskleidžiami blokai */
+.mapcard{margin-bottom:18px}
+.map-head{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between;margin-bottom:14px}
+.map-head h2{margin:0}
+.map-ctl{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.map-ctl .field{min-width:0}
+.map-ctl select{min-width:0;width:auto}
+.btn-loc{font-family:var(--sans);font-size:13px;font-weight:650;padding:8px 14px;border-radius:8px;border:1px solid var(--amber);
+  background:var(--amber);color:#1a1200;cursor:pointer;white-space:nowrap}
+.btn-loc:hover{background:#ffbf2e}
+.map-wrap{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:14px}
+@media(max-width:900px){.map-wrap{grid-template-columns:1fr}}
+#map{height:520px;border-radius:10px;border:1px solid var(--line);background:#0b0f14;z-index:0}
+@media(max-width:900px){#map{height:380px}}
+.near{display:flex;flex-direction:column;gap:8px;max-height:520px;overflow:auto}
+.near-head{font-size:12.5px;color:var(--ink2);line-height:1.5}
+.near-head b{color:var(--ink)}
+.save{background:#14261a;border:1px solid #2f6b3a;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.5}
+.save b{color:#7ee28f}
+.st{display:grid;grid-template-columns:22px 1fr auto;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);
+  border-radius:10px;background:var(--panel2);cursor:pointer;text-align:left;color:var(--ink);font:inherit;width:100%}
+.st:hover,.st.sel{border-color:var(--amber)}
+.st .rk{font-family:var(--mono);font-weight:700;color:var(--ink3)}
+.st.best .rk{color:var(--green)}
+.st .nm{font-weight:600;font-size:13px}
+.st .ad{color:var(--ink2);font-size:12px}
+.st .pr{text-align:right;font-family:var(--mono)}
+.st .pr b{display:block;font-size:15px;color:var(--ink)}
+.st.best .pr b{color:var(--green)}
+.st .pr small{color:var(--ink3);font-size:11px}
+.legend{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ink3);font-family:var(--mono);margin-top:8px;flex-wrap:wrap}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%}
+.map-note{font-size:11.5px;color:var(--ink3);margin-top:6px;line-height:1.5}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--panel);color:var(--ink);border:1px solid var(--line)}
+.leaflet-popup-content{margin:12px 14px;font-family:var(--sans);font-size:13px;line-height:1.5}
+.leaflet-popup-content a{color:var(--amber)}
+.leaflet-container a.leaflet-popup-close-button{color:var(--ink2)}
+.leaflet-control-attribution{background:rgba(13,17,23,.7)!important;color:var(--ink3)!important}
+.leaflet-control-attribution a{color:var(--ink2)!important}
+.pp-price{font-family:var(--mono);font-size:18px;font-weight:700}
+.you{width:16px;height:16px;border-radius:50%;background:#58a6ff;border:3px solid #fff;box-shadow:0 0 0 6px rgba(88,166,255,.3)}
+details.fold{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:18px}
+details.fold>summary{list-style:none;cursor:pointer;padding:16px 18px;font-size:13px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.05em;color:var(--ink2);display:flex;align-items:center;gap:10px}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary::before{content:'▸';color:var(--amber);transition:transform .15s}
+details.fold[open]>summary::before{transform:rotate(90deg)}
+details.fold>summary:hover{color:var(--ink)}
+details.fold>summary .tag{font-family:var(--mono);font-size:10px;background:var(--panel2);padding:2px 7px;border-radius:5px;color:var(--ink3);text-transform:none;letter-spacing:0;font-weight:400}
+.fold-body{padding:0 18px 18px}
+.fold-body .controls{background:var(--panel2)}
+@media(max-width:600px){.kpis{grid-template-columns:1fr 1fr;gap:10px}.kpi{padding:12px 14px}.kpi .val{font-size:22px}.kpi .lbl{font-size:10px}
+  .kpi .delta{font-size:11px}.wrap{padding:16px 12px 60px}.card{padding:14px}}
 </style>
 </head>
 <body>
@@ -107,6 +162,43 @@ footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);color:v
 
 <div id="dash" style="display:none">
   <div class="kpis" id="kpis"></div>
+
+  <section class="card full mapcard" aria-label="Pigiausios degalinės šalia">
+    <div class="map-head">
+      <h2>Pigiausia šalia tavęs <span class="tag" id="mapTag"></span></h2>
+      <div class="map-ctl">
+        <div class="field"><label>Degalai</label><select id="mType"></select></div>
+        <div class="field"><label>Nuolaidos</label><select id="mDisc">
+          <option value="today">Šiandien</option>
+          <option value="1">Pirmadienį</option><option value="2">Antradienį</option><option value="3">Trečiadienį</option>
+          <option value="4">Ketvirtadienį</option><option value="5">Penktadienį</option><option value="6">Šeštadienį</option><option value="7">Sekmadienį</option>
+          <option value="none">Be nuolaidų</option>
+        </select></div>
+        <div class="field"><label>Spindulys</label><select id="mRad">
+          <option value="3">3 km</option><option value="5">5 km</option><option value="10" selected>10 km</option><option value="20">20 km</option><option value="50">50 km</option>
+        </select></div>
+        <button class="btn-loc" id="btnLoc" type="button">📍 Mano vieta</button>
+      </div>
+    </div>
+    <div class="map-wrap">
+      <div>
+        <div id="map" role="application" aria-label="Degalinių žemėlapis"></div>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="near" id="nearList"></div>
+    </div>
+    <div class="map-note" id="mapNote"></div>
+  </section>
+
+  <div class="card full promos" id="promoCard" style="display:none">
+    <h2>Degalinių akcijos <span class="tag" id="promoTag"></span></h2>
+    <div class="promo-list" id="promoList"></div>
+    <div class="promo-note">Nuolaidos atimamos iš ENA paskelbtų kainų (darbo dienų 10 val.). Savaitgalio kainų ENA neskelbia, todėl savaitgalio kaina su nuolaida skaičiuojama nuo paskutinės paskelbtos kainos ir yra apytikslė. Tam pačiam tinklui tą pačią dieną taikoma didžiausia nuolaida, jos nesumuojamos. Sąlygas visada pasitikrink tinklo puslapyje; sąrašas redaguojamas faile <code>akcijos.json</code>.</div>
+  </div>
+
+  <details class="fold" id="foldCharts">
+    <summary>Grafikai ir analizė <span class="tag">tendencija · tipai · tinklai</span></summary>
+    <div class="fold-body">
   <div class="controls">
     <div class="field"><label>Degalų tipas</label><select id="fType"></select></div>
     <div class="field"><label>Įmonė / tinklas</label><select id="fBrand"></select></div>
@@ -123,11 +215,6 @@ footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);color:v
       <option value="4">Ketvirtadienį</option><option value="5">Penktadienį</option><option value="6">Šeštadienį</option><option value="7">Sekmadienį</option>
     </select></div>
   </div>
-  <div class="card full promos" id="promoCard" style="display:none">
-    <h2>Degalinių akcijos <span class="tag" id="promoTag"></span></h2>
-    <div class="promo-list" id="promoList"></div>
-    <div class="promo-note">Nuolaidos atimamos iš ENA paskelbtų kainų (darbo dienų 10 val.). Savaitgalio kainų ENA neskelbia, todėl savaitgalio kaina su nuolaida skaičiuojama nuo paskutinės paskelbtos kainos ir yra apytikslė. Tam pačiam tinklui tą pačią dieną taikoma didžiausia nuolaida, jos nesumuojamos. Sąlygas visada pasitikrink tinklo puslapyje; sąrašas redaguojamas faile <code>akcijos.json</code>.</div>
-  </div>
   <div class="grid"><div class="card full">
     <h2>Kainų tendencija laike <span class="tag" id="trendTag">€/l</span></h2>
     <div class="chart-box"><canvas id="trendChart"></canvas></div>
@@ -142,8 +229,12 @@ footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);color:v
       <div class="chart-box"><canvas id="brandChart"></canvas></div>
     </div>
   </div>
-  <div class="card full">
-    <h2>Detali lentelė <span class="tag" id="tblCount"></span></h2>
+    </div>
+  </details>
+
+  <details class="fold" id="foldTable">
+    <summary>Visos kainos <span class="tag" id="tblCount"></span></summary>
+    <div class="fold-body">
     <div style="overflow-x:auto"><table id="tbl" class="nodisc">
       <thead><tr>
         <th data-k="type">Tipas</th><th data-k="brand">Tinklas</th>
@@ -151,7 +242,8 @@ footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);color:v
         <th data-k="price" class="num">Kaina €/l</th><th data-k="eff" class="num eff-col">Su nuolaida</th>
       </tr></thead><tbody id="tblBody"></tbody>
     </table></div>
-  </div>
+    </div>
+  </details>
 </div>
 
 <footer>
@@ -240,11 +332,12 @@ function discTarget(v){
 const promoActiveOn=(p,date)=>(!p.galioja_iki||date<=p.galioja_iki)&&(!p.galioja_nuo||date>=p.galioja_nuo)
   &&((p.dienos||[]).includes(isoWd(date))||(p.sventes&&isHolidayLT(date)));
 // didžiausia nuolaida (€/l) tinklui+tipui konkrečią dieną; nesumuojama
-function discEUR(brand,type,date){
-  let best=0;for(const p of PROMOS){if(p.tinklas!==brand)continue;if(p.tipai&&!p.tipai.includes(type))continue;
-    if(promoActiveOn(p,date)&&p.nuolaida_ct>best)best=p.nuolaida_ct}
-  return best/100;
+function discInfo(brand,type,date){
+  let best=null;for(const p of PROMOS){if(p.tinklas!==brand)continue;if(p.tipai&&!p.tipai.includes(type))continue;
+    if(promoActiveOn(p,date)&&(!best||p.nuolaida_ct>best.nuolaida_ct))best=p}
+  return best;
 }
+const discEUR=(brand,type,date)=>{const p=discInfo(brand,type,date);return p?p.nuolaida_ct/100:0};
 function fmtDays(p){
   const d=[...(p.dienos||[])].sort((a,b)=>a-b);let s;
   if(d.length===7)s='kasdien';
@@ -271,6 +364,122 @@ function renderPromos(){
       <div class="meta">${esc(p.salyga||'')}${p.saltinis?` · <a href="${esc(p.saltinis)}" target="_blank" rel="noopener">šaltinis ↗</a>`:''}</div></div></div>`}).join('');
 }
 
+// ===== žemėlapis =====
+let GEO={},MAP=null,LAYER=null,ME=null,YOU=null,YOUC=null,MAPLIST=[],MK=new Map(),HL=null;
+const PCOL=['#3fb950','#a3d977','#e3c74a','#f0883e','#f85149'];
+const kmDist=(a,b,c,d)=>{const r=x=>x*Math.PI/180,h=Math.sin(r(c-a)/2)**2+Math.cos(r(a))*Math.cos(r(c))*Math.sin(r(d-b)/2)**2;return 12742*Math.asin(Math.sqrt(h))};
+const shortB=b=>b.replace(/^(UAB|AB|MB|IĮ|ŽŪB|ŽŪK)\s+/,'').replace(/\s+(Lietuva|LT)$/,'');
+const shortA=a=>a.replace(/\u00a0/g,' ').replace(/,?\s*\d{5}\s*$/,'').replace(/,\s*$/,'');
+const approx=x=>x.prec==='gatve'||x.prec==='gyvenviete';
+const lsGet=k=>{try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}};
+const lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+const mapState=()=>({t:+$('#mType').value,tgt:discTarget($('#mDisc').value),rad:+$('#mRad').value});
+
+// kiekvienos degalinės naujausia kaina šiam tipui (iš paskutinių 5 duomenų dienų — dalinės ENA dienos nenumeta degalinių)
+function latestByStation(t){
+  const R=D.R,nD=D.dates.length,out=new Map();
+  for(let d=nD-1;d>=Math.max(0,nD-5);d--)for(let i=R.dayStart[d];i<R.dayStart[d+1];i++){
+    if(R.t[i]!==t||out.has(R.s[i]))continue;out.set(R.s[i],{p:R.p[i]/1000,d})}
+  return out;
+}
+function initMap(){
+  if(typeof L==='undefined'){$('.mapcard').style.display='none';return}
+  MAP=L.map('map',{preferCanvas:true,minZoom:6}).setView([55.25,23.9],7);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd',
+    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'}).addTo(MAP);
+  LAYER=L.layerGroup().addTo(MAP);
+  MAP.on('click',e=>setMe(e.latlng.lat,e.latlng.lng));
+  const t=D.types.findIndex(x=>/95/.test(x));
+  $('#mType').innerHTML=D.types.map((x,i)=>`<option value="${i}"${i===t?' selected':''}>${esc(x)}</option>`).join('');
+  const saved=lsGet('kuras_map');if(saved){if(saved.t!=null&&D.types[saved.t])$('#mType').value=saved.t;if(saved.rad)$('#mRad').value=saved.rad}
+  ['mType','mDisc'].forEach(id=>$('#'+id).onchange=()=>{saveMapPrefs();renderMap()});
+  $('#mRad').onchange=()=>{saveMapPrefs();if(ME)drawMe(true);renderNear()};
+  $('#btnLoc').onclick=locate;
+  renderMap();
+  if(saved&&saved.me)setMe(saved.me.lat,saved.me.lon,true);
+}
+function saveMapPrefs(){lsSet('kuras_map',{t:+$('#mType').value,rad:+$('#mRad').value,me:ME})}
+function locate(){
+  if(!navigator.geolocation){$('#mapNote').textContent='Naršyklė nepalaiko vietos nustatymo — paspausk žemėlapyje.';return}
+  $('#btnLoc').textContent='📍 Ieškau…';
+  navigator.geolocation.getCurrentPosition(p=>{$('#btnLoc').textContent='📍 Mano vieta';setMe(p.coords.latitude,p.coords.longitude)},
+    ()=>{$('#btnLoc').textContent='📍 Mano vieta';$('#mapNote').textContent='Vietos nustatyti nepavyko (leidimas atmestas ar neprieinama) — paspausk žemėlapyje ten, kur esi.'},
+    {enableHighAccuracy:false,timeout:10000,maximumAge:300000});
+}
+function setMe(lat,lon,quiet){ME={lat,lon};drawMe(!quiet);saveMapPrefs();renderNear()}
+function drawMe(fit){
+  const rad=+$('#mRad').value*1000;
+  if(!YOU)YOU=L.marker([ME.lat,ME.lon],{icon:L.divIcon({className:'',html:'<div class="you"></div>',iconSize:[16,16],iconAnchor:[8,8]}),interactive:false,zIndexOffset:1000}).addTo(MAP);
+  else YOU.setLatLng([ME.lat,ME.lon]);
+  if(!YOUC)YOUC=L.circle([ME.lat,ME.lon],{radius:rad,color:'#ffb000',weight:1,fillColor:'#ffb000',fillOpacity:.05,interactive:false}).addTo(MAP);
+  else{YOUC.setLatLng([ME.lat,ME.lon]);YOUC.setRadius(rad)}
+  if(fit)MAP.fitBounds(YOUC.getBounds(),{padding:[20,20]});
+}
+function renderMap(){
+  if(!MAP)return;
+  const{t,tgt}=mapState(),type=D.types[t],rows=latestByStation(t),list=[];
+  for(const[s,v]of rows){const g=GEO[D.stations[s].join('|')];if(!g)continue;
+    const pr=tgt?discInfo(D.stations[s][0],type,tgt.date):null,disc=pr?pr.nuolaida_ct/100:0;
+    list.push({s,lat:g[0],lon:g[1],prec:g[2],p:v.p,e:v.p-disc,disc,promo:pr,day:D.dates[v.d]})}
+  const es=list.map(x=>x.e).sort((a,b)=>a-b),q=k=>es[Math.min(es.length-1,Math.floor(es.length*k))],th=[q(.2),q(.4),q(.6),q(.8)];
+  const colOf=e=>{const i=th.findIndex(x=>e<=x);return PCOL[i<0?4:i]};
+  LAYER.clearLayers();MK.clear();HL=null;
+  for(const x of list){x.col=colOf(x.e);
+    const m=L.circleMarker([x.lat,x.lon],{radius:6,color:'#0d1117',weight:1,fillColor:x.col,fillOpacity:.92});
+    m.bindPopup(()=>popupHtml(x,type,tgt),{maxWidth:280});m.addTo(LAYER);MK.set(x.s,m)}
+  MAPLIST=list;
+  $('#mapTag').textContent=`${type} · ${tgt?'su nuolaidomis '+tgt.label:'be nuolaidų'}`;
+  $('#legend').innerHTML=list.length?`<span>pigiau</span>${PCOL.map(c=>`<i style="background:${c}"></i>`).join('')}<span>brangiau</span><span>· ${fmt(es[0])}–${fmt(es.at(-1))} €/l</span>`:'';
+  const missing=rows.size-list.length;
+  $('#mapNote').textContent=list.length
+    ?`${list.length} degalinių žemėlapyje${missing?`, ${missing} dar be koordinačių`:''}. Kainos – ENA (darbo dienų 10 val.); savaitgalio kaina su nuolaida skaičiuojama nuo paskutinės paskelbtos. Vietos – OpenStreetMap; „~" reiškia apytikslę vietą.`
+    :'Degalinių koordinatės dar ruošiamos — žemėlapis užsipildys po artimiausio atnaujinimo.';
+  renderNear();
+}
+function popupHtml(x,type,tgt){
+  const st=D.stations[x.s];
+  return`<div style="font-weight:650">${esc(shortB(st[0]))}</div><div style="color:var(--ink2);font-size:12px">${esc(shortA(st[2]))} · ${esc(st[1])}${approx(x)?' · ~vieta apytikslė':''}</div>
+    <div style="margin-top:6px"><span class="pp-price" style="color:${x.col}">${fmt(x.e)}</span> €/l <span style="color:var(--ink3)">${esc(type)}</span></div>
+    ${x.disc?`<div style="font-size:12px">ENA kaina ${fmt(x.p)} · <b style="color:var(--green)">−${Math.round(x.disc*100)} ct</b> ${esc(x.promo.pavadinimas)}<br><span style="color:var(--ink3)">${esc(x.promo.salyga||'')}</span></div>`
+      :`<div style="font-size:12px;color:var(--ink3)">${tgt?'Nuolaidos šiai dienai nėra':'Be nuolaidų'}</div>`}
+    <div style="font-size:11.5px;color:var(--ink3);margin-top:4px">Kaina iš ${x.day}${ME?` · ${kmDist(ME.lat,ME.lon,x.lat,x.lon).toFixed(1)} km`:''}</div>
+    <div style="margin-top:6px"><a href="https://www.google.com/maps/dir/?api=1&destination=${x.lat},${x.lon}" target="_blank" rel="noopener">Maršrutas ↗</a></div>`;
+}
+function stHtml(x,i,dist){
+  const st=D.stations[x.s];
+  return`<button type="button" class="st${i===0?' best':''}" data-s="${x.s}"><span class="rk">${i+1}</span>
+    <span><span class="nm">${esc(shortB(st[0]))}</span><br><span class="ad">${esc(shortA(st[2]))}${dist!=null?` · ${approx(x)?'~':''}${dist.toFixed(1)} km`:''}</span></span>
+    <span class="pr"><b>${fmt(x.e)}</b>${x.disc?`<small>−${Math.round(x.disc*100)} ct</small>`:x.day!==D.dates.at(-1)?`<small>${x.day.slice(5)}</small>`:''}</span></button>`;
+}
+function highlight(sIdx){
+  if(HL){const m=MK.get(HL);if(m)m.setStyle({radius:6,color:'#0d1117',weight:1})}
+  HL=sIdx;const m=MK.get(sIdx);if(m){m.setStyle({radius:10,color:'#ffffff',weight:3});m.bringToFront()}
+}
+function renderNear(){
+  const box=$('#nearList');if(!box||!MAP)return;
+  const{rad,tgt}=mapState();
+  if(!MAPLIST.length){box.innerHTML='';return}
+  let html,items;
+  if(!ME){
+    items=[...MAPLIST].sort((a,b)=>a.e-b.e).slice(0,6);
+    html=`<div class="near-head">Paspausk žemėlapyje arba <b>📍 Mano vieta</b> — parodysiu pigiausias per ${rad} km.<br>Kol kas – pigiausios visoje Lietuvoje:</div>`+items.map((x,i)=>stHtml(x,i,null)).join('');
+  }else{
+    const near=MAPLIST.map(x=>({...x,dist:kmDist(ME.lat,ME.lon,x.lat,x.lon)})).filter(x=>x.dist<=rad);
+    if(!near.length){box.innerHTML=`<div class="near-head">Per ${rad} km degalinių nerasta – padidink spindulį.</div>`;highlight(null);return}
+    items=[...near].sort((a,b)=>a.e-b.e||a.dist-b.dist);
+    const best=items[0],nearest=[...near].sort((a,b)=>a.dist-b.dist)[0],diff=nearest.e-best.e;
+    const save=best.s!==nearest.s&&diff>=0.005
+      ?`<div class="save">Pigiausia per ${rad} km – <b>${esc(shortB(D.stations[best.s][0]))} ${fmt(best.e)}</b> (${best.dist.toFixed(1)} km).<br>Artimiausia (${esc(shortB(D.stations[nearest.s][0]))}, ${nearest.dist.toFixed(1)} km) – ${fmt(nearest.e)}.<br>Skirtumas <b>${Math.round(diff*100)} ct/l ≈ ${(diff*50).toFixed(2).replace('.',',')} € už 50 l</b>.</div>`
+      :`<div class="save">Artimiausia degalinė (${esc(shortB(D.stations[nearest.s][0]))}, ${nearest.dist.toFixed(1)} km) ir yra pigiausia per ${rad} km${tgt?' su nuolaidomis':''}.</div>`;
+    html=`<div class="near-head"><b>${near.length}</b> degalinės per ${rad} km · rikiuota pagal kainą${tgt?' su nuolaidomis':''}</div>`+save+items.slice(0,8).map((x,i)=>stHtml(x,i,x.dist)).join('');
+    items=items.slice(0,8);
+  }
+  box.innerHTML=html;
+  highlight(items[0]?items[0].s:null);
+  box.querySelectorAll('.st').forEach(b=>b.onclick=()=>{const s=+b.dataset.s,m=MK.get(s);if(!m)return;
+    box.querySelectorAll('.st').forEach(x=>x.classList.toggle('sel',x===b));highlight(s);MAP.flyTo(m.getLatLng(),Math.max(MAP.getZoom(),14),{duration:.5});m.openPopup()});
+}
+
 // ===== UI =====
 async function init(){
   try{
@@ -285,8 +494,10 @@ async function init(){
     $('#fType').innerHTML=opt(D.types,'Visi tipai');
     $('#fBrand').innerHTML=opt(D.brands,'Visi tinklai');
     $('#fMuni').innerHTML=opt(D.munis,'Visa Lietuva');
+    try{const g=await fetch('geo.json?t='+Date.now());if(g.ok)GEO=((await g.json()).stations)||{}}catch(e){GEO={}}
     $('#loading').style.display='none';$('#dash').style.display='block';
     render();
+    initMap();
   }catch(e){
     $('#loading').style.display='none';const el=$('#error');el.style.display='block';el.textContent='⚠️ '+e.message;
   }
@@ -371,6 +582,7 @@ document.querySelectorAll('#tbl th').forEach(th=>th.onclick=()=>{
   const k=th.dataset.k;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=k==='price'?1:1}if(lastC)renderTable(lastC)});
 ['fType','fBrand','fMuni','fAgg','fPeriod'].forEach(id=>$('#'+id).onchange=render);
 $('#fDisc').onchange=()=>{if($('#fDisc').value!=='none'){sortKey='eff';sortDir=1}render()};
+$('#foldCharts').addEventListener('toggle',e=>{if(e.target.open)render()});
 init();
 </script>
 </body>
