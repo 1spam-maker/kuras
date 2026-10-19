@@ -155,6 +155,9 @@ details.fold>summary .tag{font-family:var(--mono);font-size:10px;background:var(
 .st .tg.plus{background:var(--panel);color:var(--ink2)}
 .near-links{display:flex;gap:14px;flex-wrap:wrap}
 .pick-hint{color:#58a6ff}
+.tg.vol{background:#3a2550;color:#d2a8ff}
+.volmark{font-size:12px;margin-left:4px;cursor:help}
+.vol-note{background:#241a33;border:1px solid #4b3470;border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12px;color:#d2a8ff;line-height:1.45}
 .field.grow{flex:2 1 240px}
 input[type=search]{font-family:var(--sans);font-size:13.5px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);
   border-radius:8px;padding:8px 10px;width:100%;min-width:0}
@@ -407,6 +410,34 @@ function renderPromos(){
       <div class="meta">${esc(p.salyga||'')}${p.saltinis?` · <a href="${esc(p.saltinis)}" target="_blank" rel="noopener">šaltinis ↗</a>`:''}</div></div></div>`}).join('');
 }
 
+// ===== „kilnoja kainą“: 10 val. kainos šokinėjimas atmetus bendrą rinkos pokytį =====
+// Kiekvienai degalinei ir tipui per paskutines ~20 darbo dienų: |dienos pokytis − rinkos medianinis pokytis|, vidurkis ct.
+// Žymima, jei ≥ 85-o procentilio tame tipe ir ≥ 4 ct.
+let VOL=new Map(),VOLMED=[];
+function computeVol(){
+  const R=D.R,nD=D.dates.length,start=Math.max(0,nD-22);VOL=new Map();VOLMED=[];
+  for(let t=0;t<D.types.length;t++){
+    const sizes=[];for(let d=start;d<nD;d++){let c=0;for(let i=R.dayStart[d];i<R.dayStart[d+1];i++)if(R.t[i]===t)c++;sizes.push(c)}
+    const full=Math.max(...sizes)*0.5,res=new Map();let prev=null;
+    for(let d=start;d<nD;d++){
+      if(!sizes[d-start]||sizes[d-start]<full)continue;            // dalinės ENA dienos praleidžiamos
+      const cur=new Map();for(let i=R.dayStart[d];i<R.dayStart[d+1];i++)if(R.t[i]===t)cur.set(R.s[i],R.p[i]);
+      if(prev){const diffs=[];for(const[s,p]of cur){const q=prev.get(s);if(q!=null)diffs.push([s,p-q])}
+        if(diffs.length>=30){const v=diffs.map(x=>x[1]).sort((a,b)=>a-b),mk=v[v.length>>1];
+          for(const[s,x]of diffs){if(!res.has(s))res.set(s,[]);res.get(s).push(Math.abs(x-mk)/10)}}}
+      prev=cur;
+    }
+    const sc=[];
+    for(const[s,arr]of res)if(arr.length>=8){const m=arr.reduce((a,b)=>a+b,0)/arr.length;sc.push(m);VOL.set(s+'|'+t,{t,sc:m,j:arr.filter(x=>x>=5).length,n:arr.length})}
+    sc.sort((a,b)=>a-b);const thr=Math.max(4,sc[Math.floor(sc.length*.85)]??99);VOLMED[t]=sc[sc.length>>1]??0;
+    for(const v of VOL.values())if(v.t===t)v.flag=v.sc>=thr;
+  }
+}
+const volOf=(s,t)=>VOL.get(s+'|'+t);
+const volTitle=(v,t)=>`10 val. kaina per paskutines ${v.n} d. d. kasdien šokinėja vid. ±${v.sc.toFixed(1).replace('.',',')} ct (įprasta ±${VOLMED[t].toFixed(1).replace('.',',')} ct), šuolių ≥5 ct: ${v.j}. Atmesti bendri rinkos pokyčiai. Per dieną kaina gali būti kitokia.`;
+const volTag=(s,t)=>{const v=volOf(s,t);return v&&v.flag?`<span class="tg vol" title="${volTitle(v,t)}">🔀 kilnoja</span>`:''};
+const volMark=(s,t)=>{const v=volOf(s,t);return v&&v.flag?`<span class="volmark" title="${volTitle(v,t)}" aria-label="Kilnoja kainą">🔀</span>`:''};
+
 // ===== žemėlapis =====
 let GEO={},MAP=null,LAYER=null,ME=null,YOU=null,YOUC=null,MAPLIST=[],MK=new Map(),HL=null;
 let DEST=null,DESTMK=null,ROUTE=null,ROUTEKM=null,ROUTEAPPROX=false,ROUTELINE=null,PICK=false,ROUTEREQ=0,BASE_NOTE='',LASTSTY=null;
@@ -495,7 +526,7 @@ function renderMap(){
   $('#legend').innerHTML=list.length?`<span>pigiau</span>${PCOL.map(c=>`<i style="background:${c}"></i>`).join('')}<span>brangiau</span><span>· ${fmt(es[0])}–${fmt(es.at(-1))} €/l</span>`:'';
   const missing=rows.size-list.length;
   BASE_NOTE=list.length
-    ?`${dg(list.length)} žemėlapyje${missing?`, ${missing} dar be koordinačių`:''}. Kainos – ENA (darbo dienų 10 val.); savaitgalio kaina su nuolaida skaičiuojama nuo paskutinės paskelbtos. Vietos – OpenStreetMap; „~" reiškia apytikslę vietą.`
+    ?`${dg(list.length)} žemėlapyje${missing?`, ${missing} dar be koordinačių`:''}. Kainos – ENA (darbo dienų 10 val.); savaitgalio kaina su nuolaida skaičiuojama nuo paskutinės paskelbtos. Vietos – OpenStreetMap; „~" reiškia apytikslę vietą. 🔀 kilnoja – degalinė dažnai keičia 10 val. kainą, todėl per dieną ji gali būti kitokia.`
     :'Degalinių koordinatės dar ruošiamos — žemėlapis užsipildys po artimiausio atnaujinimo.';
   $('#mapNote').textContent=BASE_NOTE;
   renderNear();
@@ -506,7 +537,8 @@ function popupHtml(x,type,tgt){
     <div style="margin-top:6px"><span class="pp-price" style="color:${x.col}">${fmt(x.e)}</span> €/l <span style="color:var(--ink3)">${esc(type)}</span></div>
     ${x.disc?`<div style="font-size:12px">ENA kaina ${fmt(x.p)} · <b style="color:var(--green)">−${Math.round(x.disc*100)} ct</b> ${esc(x.promo.pavadinimas)}<br><span style="color:var(--ink3)">${esc(x.promo.salyga||'')}</span></div>`
       :`<div style="font-size:12px;color:var(--ink3)">${tgt?'Nuolaidos šiai dienai nėra':'Be nuolaidų'}</div>`}
-    <div style="font-size:11.5px;color:var(--ink3);margin-top:4px">Kaina iš ${x.day}${ME?` · ${kmDist(ME.lat,ME.lon,x.lat,x.lon).toFixed(1)} km`:''}</div>
+    <div style="font-size:11.5px;color:var(--ink3);margin-top:4px">ENA kaina ${x.day} 10:00${ME?` · ${kmDist(ME.lat,ME.lon,x.lat,x.lon).toFixed(1)} km`:''}</div>
+    ${(()=>{const t=D.types.indexOf(type),v=volOf(x.s,t);return v&&v.flag?`<div class="vol-note">🔀 <b>Kilnoja kainą.</b> ${volTitle(v,t)}</div>`:''})()}
     <div style="margin-top:6px"><a href="https://www.google.com/maps/dir/?api=1&destination=${x.lat},${x.lon}" target="_blank" rel="noopener">Maršrutas ↗</a></div>`;
 }
 function stHtml(x,i,sub,tag,isBest){
@@ -576,7 +608,7 @@ const dg=n=>`${n} ${dgw(n)}`;
 const ctTag=(x,best)=>{const d=Math.round((x.e-best.e)*100);return d<=0?'<span class="tg">pigiausia</span>':`<span class="tg plus">+${d} ct</span>`};
 function renderNear(){
   const box=$('#nearList');if(!box||!MAP)return;
-  const{rad,tgt}=mapState(),tolC=+$('#mTol').value,tol=tolC/100+1e-9;
+  const{rad,tgt}=mapState(),tolC=+$('#mTol').value,tol=tolC/100+1e-9,MT=+$('#mType').value;
   if(!MAPLIST.length){box.innerHTML='';return}
   const muniName=(KMUNI??-1)>=0?D.munis[KMUNI]:'visą Lietuvą';
   const sd=tgt?' su nuolaidomis':'';
@@ -593,7 +625,7 @@ function renderNear(){
         <div class="near-links"><button type="button" class="linkbtn" id="destReset">✕ be tikslo</button><button type="button" class="linkbtn" id="meReset">✕ grįžti į ${esc(muniName)}</button></div></div>
       <div class="save">Pigiausia pakeliui – <b>${esc(shortB(D.stations[best.s][0]))} ${fmt(best.e)}</b>, po ${best.along.toFixed(1)} km.<br>
         ${tolC?`Iki +${tolC} ct: <b>${group.length}</b> ${dgw(group.length)} – išdėstytos ta tvarka, kuria jas pravažiuosi.`:'Rodoma tik pigiausia.'}</div>`
-      +items.map((x,i)=>stHtml(x,i,`${x.along.toFixed(1)} km kelyje · ${Math.round(x.off*1000)} m nuo kelio`,ctTag(x,best),x.e<=best.e+1e-9)).join('');
+      +items.map((x,i)=>stHtml(x,i,`${x.along.toFixed(1)} km kelyje · ${Math.round(x.off*1000)} m nuo kelio`,ctTag(x,best)+volTag(x.s,MT),x.e<=best.e+1e-9)).join('');
   }else if(ME){
     // ---- aplink mano vietą ----
     const near=MAPLIST.map(x=>({...x,dist:kmDist(ME.lat,ME.lon,x.lat,x.lon)})).filter(x=>x.dist<=rad);
@@ -609,7 +641,7 @@ function renderNear(){
         ${tolC?`Iki +${tolC} ct: <b>${group.length}</b> ${dgw(group.length)} – rikiuota pagal atstumą.`:'Rodoma tik pigiausia.'}
         ${!inG?`<br>Artimiausia (${esc(shortB(D.stations[nearest.s][0]))}, ${nearest.dist.toFixed(1)} km) – ${fmt(nearest.e)}, +${Math.round((nearest.e-best.e)*100)} ct.`:''}
         <br><span style="color:var(--ink3)">Važiuoji kur nors? Spausk 🏁 Tikslas – parodysiu pakeliui.</span></div>`
-      +items.map((x,i)=>stHtml(x,i,`${approx(x)?'~':''}${x.dist.toFixed(1)} km`,ctTag(x,best),x.e<=best.e+1e-9)).join('');
+      +items.map((x,i)=>stHtml(x,i,`${approx(x)?'~':''}${x.dist.toFixed(1)} km`,ctTag(x,best)+volTag(x.s,MT),x.e<=best.e+1e-9)).join('');
   }else{
     // ---- pasirinkta vietovė ----
     const m=KMUNI??-1,pool=m>=0?MAPLIST.filter(x=>D.stMuni[x.s]===m):MAPLIST;
@@ -619,7 +651,7 @@ function renderNear(){
     items=(group.length>=3?group:[...pool].sort((a,b)=>a.e-b.e)).slice(0,10);
     html=`<div class="near-head">Pigiausios: <b>${m>=0?esc(D.munis[m]):'visa Lietuva'}</b>${sd} (${dg(pool.length)})${tolC?` · iki +${tolC} ct: <b>${group.length}</b>`:''}.<br>
       Paspausk žemėlapyje arba <b>📍 Mano vieta</b> – parodysiu per ${rad} km nuo tavęs${DEST?', o su 🏁 tikslu – pakeliui':''}.</div>`
-      +items.map((x,i)=>stHtml(x,i,'',ctTag(x,best),x.e<=best.e+1e-9)).join('');
+      +items.map((x,i)=>stHtml(x,i,'',ctTag(x,best)+volTag(x.s,MT),x.e<=best.e+1e-9)).join('');
   }
   box.innerHTML=html;
   const rb=box.querySelector('#meReset');if(rb)rb.onclick=clearMe;
@@ -634,7 +666,7 @@ async function init(){
   try{
     const r=await fetch('data.json?t='+Date.now());
     if(!r.ok)throw new Error('data.json nerastas (HTTP '+r.status+')');
-    const raw=await r.json();D=build(raw);
+    const raw=await r.json();D=build(raw);computeVol();
     try{const a=await fetch('akcijos.json?t='+Date.now());if(a.ok)PROMOS=((await a.json()).akcijos)||[]}catch(e){PROMOS=[]}
     if(raw.updated)$('#updInfo').textContent='Atnaujinta '+new Intl.DateTimeFormat('lt-LT',{timeZone:'Europe/Vilnius',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(raw.updated))+' · tikrinama ~8, 12, 15 ir 17 val. darbo dienomis';
     if(!D.R.n)throw new Error('Duomenų dar nėra. Jie atsiras po artimiausio sėkmingo scrape paleidimo.');
@@ -706,7 +738,7 @@ function renderKPIs(){
     const s0=cur.st[0],more=cur.st.length-1;
     el.title='Rodyti žemėlapyje';
     el.innerHTML=`<div class="lbl">${esc(D.types[t])} · pigiausia</div><div class="val">${fmt(cur.p)} <small>€/l</small></div>
-      <div class="where">${esc(shortB(D.stations[s0][0]))} · ${esc(whereOf(s0,m))}${more>0?` <span>+${more}</span>`:''}${cur.d!==L?` · ${D.dates[cur.d].slice(5)}`:''}</div>
+      <div class="where">${volOf(s0,t)?.flag?'🔀 ':''}${esc(shortB(D.stations[s0][0]))} · ${esc(whereOf(s0,m))}${more>0?` <span>+${more}</span>`:''}${cur.d!==L?` · ${D.dates[cur.d].slice(5)}`:''}</div>
       <div class="delta ${cls}">${arrow} ${delta} <span style="color:var(--ink3);font-weight:400">vs ${prev?D.dates[prev.d].slice(5):'—'}</span></div>`;
     el.onclick=()=>showOnMap(s0,t);
     box.appendChild(el);
@@ -790,12 +822,12 @@ function renderTable(){
   $('#tblBody').innerHTML=shown.map(r=>{const st=D.stations[r.s],cls=r.p===lo[r.t]?'lo':r.p===hi[r.t]?'hi':'';
     const hasGeo=!!GEO[st.join('|')];
     return`<tr><td>${esc(D.types[r.t])}</td><td>${esc(st[0])}</td><td>${esc(st[1])}</td><td>${esc(st[2])}</td>
-      <td class="num"><span class="price-pill ${cls}">${fmt(r.p)}</span>${r.day!==latest?`<span class="dt">${r.day.slice(5)}</span>`:''}</td>
+      <td class="num">${volMark(r.s,r.t)}<span class="price-pill ${cls}">${fmt(r.p)}</span>${r.day!==latest?`<span class="dt">${r.day.slice(5)}</span>`:''}</td>
       <td class="num eff-col">${tgt?(r.disc?`<span class="eff">${fmt(r.e)}<small>−${Math.round(r.disc*100)} ct</small></span>`:`<span style="color:var(--ink3);font-family:var(--mono)">${fmt(r.e)}</span>`):''}</td>
       <td>${hasGeo?`<button type="button" class="pin" data-s="${r.s}" data-t="${r.t}" title="Rodyti žemėlapyje" aria-label="Rodyti žemėlapyje">📍</button>`:''}</td></tr>`}).join('')
     ||`<tr><td colspan="7" style="color:var(--ink3);padding:16px 10px">Nieko nerasta pagal šiuos filtrus.</td></tr>`;
   const filtered=words.length||t>=0||b>=0||m>=0;
-  $('#tblInfo').textContent=`${rows.length} kainų${shown.length<rows.length?` · rodoma pirmos ${shown.length}`:''}${tgt?' · nuolaidos '+tgt.label:''} · naujausios kainos (${latest})`;
+  $('#tblInfo').textContent=`${rows.length} kainų · 🔀 – kilnoja kainą${shown.length<rows.length?` · rodoma pirmos ${shown.length}`:''}${tgt?' · nuolaidos '+tgt.label:''} · naujausios kainos (${latest})`;
   $('#tReset').style.visibility=filtered||tgt?'visible':'hidden';
   $('#tblCount').textContent=`${latest} · ${rows.length} kainų`;
   $('#tblBody').querySelectorAll('.pin').forEach(btn=>btn.onclick=()=>showOnMap(+btn.dataset.s,+btn.dataset.t));
