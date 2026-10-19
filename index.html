@@ -156,6 +156,13 @@ details.fold>summary .tag{font-family:var(--mono);font-size:10px;background:var(
 .near-links{display:flex;gap:14px;flex-wrap:wrap}
 .pick-hint{color:#58a6ff}
 .tg.vol{background:#3a2550;color:#d2a8ff}
+.brent-info{margin-top:14px;font-size:13px;line-height:1.6;color:var(--ink2)}
+.brent-info b{color:var(--ink)}
+.brent-info .sig{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;color:var(--ink)}
+.brent-info .sig.up{border-color:#6b2f2f;background:#2a1717}
+.brent-info .sig.down{border-color:#2f6b3a;background:#14261a}
+.brent-info small{color:var(--ink3);display:block;margin-top:6px}
+.kpi .warn{font-size:11.5px;color:#ff9b8f;margin-top:4px}
 .volmark{font-size:12px;margin-left:4px;cursor:help}
 .vol-note{background:#241a33;border:1px solid #4b3470;border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12px;color:#d2a8ff;line-height:1.45}
 .field.grow{flex:2 1 240px}
@@ -252,6 +259,11 @@ th.sorted{color:var(--amber)}
   <div class="grid"><div class="card full">
     <h2>Kainų tendencija laike <span class="tag" id="trendTag">€/l</span></h2>
     <div class="chart-box"><canvas id="trendChart"></canvas></div>
+  </div></div>
+  <div class="grid"><div class="card full" id="brentCard" style="display:none">
+    <h2>Brent nafta ir degalų kainos <span class="tag" id="brentTag"></span></h2>
+    <div class="chart-box"><canvas id="brentChart"></canvas></div>
+    <div class="brent-info" id="brentInfo"></div>
   </div></div>
   <div class="grid">
     <div class="card">
@@ -437,6 +449,63 @@ const volOf=(s,t)=>VOL.get(s+'|'+t);
 const volTitle=(v,t)=>`10 val. kaina per paskutines ${v.n} d. d. kasdien šokinėja vid. ±${v.sc.toFixed(1).replace('.',',')} ct (įprasta ±${VOLMED[t].toFixed(1).replace('.',',')} ct), šuolių ≥5 ct: ${v.j}. Atmesti bendri rinkos pokyčiai. Per dieną kaina gali būti kitokia.`;
 const volTag=(s,t)=>{const v=volOf(s,t);return v&&v.flag?`<span class="tg vol" title="${volTitle(v,t)}">🔀 kilnoja</span>`:''};
 const volMark=(s,t)=>{const v=volOf(s,t);return v&&v.flag?`<span class="volmark" title="${volTitle(v,t)}" aria-label="Kilnoja kainą">🔀</span>`:''};
+
+// ===== Brent nafta =====
+let BRENT=null;
+function brentOn(date){ // paskutinė Brent € reikšmė tą dieną ar anksčiau
+  const a=BRENT.dates;let lo=0,hi=a.length-1,r=-1;while(lo<=hi){const m=(lo+hi)>>1;if(a[m]<=date){r=m;lo=m+1}else hi=m-1}
+  return r<0?null:BRENT.eur[r];
+}
+function fuelAvgSeries(t){ // šalies vidurkis kiekvienai pilnai ENA dienai
+  const R=D.R,nD=D.dates.length,cnt=new Array(nD).fill(0),sum=new Array(nD).fill(0);
+  for(let i=0;i<R.n;i++)if(R.t[i]===t){cnt[R.d[i]]++;sum[R.d[i]]+=R.p[i]}
+  const full=Math.max(...cnt)*.5,out=[];for(let d=0;d<nD;d++)if(cnt[d]&&cnt[d]>=full)out.push([D.dates[d],sum[d]/cnt[d]/1000]);return out;
+}
+// savaitinių (5 d. d.) pokyčių koreliacija su Brent, ieškant vėlavimo 0–12 d. d.
+function brentLink(t){
+  const S=fuelAvgSeries(t),W=5,last=BRENT.dates.at(-1);let best=null;
+  for(let L=0;L<=12;L++){const X=[],Y=[];
+    for(let i=W+L;i<S.length;i++){const d1=S[i-L][0],d0=S[i-L-W][0];if(d1>last)continue;
+      const b1=brentOn(d1),b0=brentOn(d0);if(b1==null||b0==null)continue;X.push(b1-b0);Y.push((S[i][1]-S[i-W][1])*100)}
+    if(X.length<20)continue;
+    const n=X.length,mx=X.reduce((a,b)=>a+b)/n,my=Y.reduce((a,b)=>a+b)/n;let sxy=0,sxx=0,syy=0;
+    for(let k=0;k<n;k++){const dx=X[k]-mx,dy=Y[k]-my;sxy+=dx*dy;sxx+=dx*dx;syy+=dy*dy}
+    const r=sxy/Math.sqrt(sxx*syy),sl=sxy/sxx;if(!best||r>best.r)best={L,r,sl,n}}
+  return best;
+}
+function brentWeek(){ // paskutinis pokytis per ~savaitę (5 stebėjimai)
+  const e=BRENT.eur,u=BRENT.usd,n=e.length;if(n<6)return null;
+  return{date:BRENT.dates[n-1],usd:u[n-1],eur:e[n-1],dEur:e[n-1]-e[n-6],pct:(e[n-1]/e[n-6]-1)*100,from:BRENT.dates[n-6]};
+}
+const lt=(x,d=1)=>x.toFixed(d).replace('.',',');
+function renderBrent(f){
+  if(!BRENT){$('#brentCard').style.display='none';return}
+  $('#brentCard').style.display='block';destroy('brentC');
+  const t95=D.types.findIndex(x=>/95/.test(x)),tD=D.types.findIndex(x=>/dyzel/i.test(x));
+  const S95=fuelAvgSeries(t95),SD=fuelAvgSeries(tD);
+  let labels=[...new Set([...S95.map(x=>x[0]),...SD.map(x=>x[0])])].sort();
+  if(f&&f.period>0)labels=labels.slice(-f.period);
+  const m95=new Map(S95),mD=new Map(SD),last=BRENT.dates.at(-1);
+  charts.brentC=new Chart($('#brentChart'),{type:'line',data:{labels,datasets:[
+    {label:'95 benzinas (vid. €/l)',data:labels.map(d=>m95.get(d)??null),borderColor:'#ffb000',backgroundColor:'#ffb00022',yAxisID:'y',tension:.25,pointRadius:0,borderWidth:2,spanGaps:true},
+    {label:'Dyzelinas (vid. €/l)',data:labels.map(d=>mD.get(d)??null),borderColor:'#3fb950',backgroundColor:'#3fb95022',yAxisID:'y',tension:.25,pointRadius:0,borderWidth:2,spanGaps:true},
+    {label:'Brent (€/bbl, dešinė ašis)',data:labels.map(d=>d<=last?brentOn(d):null),borderColor:'#bc8cff',backgroundColor:'#bc8cff22',yAxisID:'y2',tension:.2,pointRadius:0,borderWidth:2,borderDash:[6,4],spanGaps:false}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:14}},tooltip:{callbacks:{label:c=>`${c.dataset.label.split(' (')[0]}: ${c.parsed.y==null?'—':c.datasetIndex===2?lt(c.parsed.y,2)+' €/bbl':c.parsed.y.toFixed(3)+' €/l'}`}}},
+      scales:{y:{position:'left',grid:{color:C_GRID},ticks:{callback:v=>v.toFixed(2)},title:{display:true,text:'€/l'}},
+        y2:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>Math.round(v)},title:{display:true,text:'Brent €/bbl'}},
+        x:{grid:{display:false},ticks:{maxTicksLimit:10}}}}});
+  const w=brentWeek(),links=[[tD,brentLink(tD)],[t95,brentLink(t95)]].filter(x=>x[1]);
+  $('#brentTag').textContent=`Brent iki ${last.slice(5)} · ${lt(BRENT.usd.at(-1),2)} $ / ${lt(BRENT.eur.at(-1),2)} €`;
+  let sig='';
+  if(w){const cls=w.pct>=2?'up':w.pct<=-2?'down':'';
+    const exp=links.filter(([,l])=>l.r>=.3).map(([t,l])=>`${D.types[t].toLowerCase()} ~${w.dEur*l.sl>=0?'+':''}${lt(w.dEur*l.sl)} ct/l`).join(', ');
+    const lag=links.length?Math.round(links.reduce((a,[,l])=>a+l.L,0)/links.length):null;
+    sig=`<div class="sig ${cls}">Brent per savaitę (${w.from.slice(5)} → ${w.date.slice(5)}): <b>${w.pct>=0?'▲ +':'▼ '}${lt(w.pct)} %</b> (${w.dEur>=0?'+':''}${lt(w.dEur)} €/bbl).
+      ${exp?`<br>Pagal istorinį ryšį per ~${lag} d. d. tai atitiktų: <b>${exp}</b>.`:''}</div>`}
+  $('#brentInfo').innerHTML=sig+links.map(([t,l])=>`<b>${esc(D.types[t])}</b> seka Brent su ~${l.L} d. d. vėlavimu: ryšys r = ${lt(l.r,2)}${l.r<.3?' (silpnas)':l.r<.5?' (vidutinis)':' (ryškus)'}; +10 €/bbl ≈ ${l.sl>=0?'+':''}${lt(l.sl*10)} ct/l.`).join('<br>')
+    +`<small>Skaičiuota iš savaitinių pokyčių (${links[0]?.[1].n||0} stebėjimų). Tai statistinis ryšys, ne prognozė: kainas lemia ir didmeninės degalų kainos, valiutos kursas, konkurencija. Brent – EIA „Europe Brent Spot“ (per FRED, skelbiama kas savaitę, todėl paskutinės dienos vėluoja), EUR – ECB kursas.</small>`;
+}
 
 // ===== žemėlapis =====
 let GEO={},MAP=null,LAYER=null,ME=null,YOU=null,YOUC=null,MAPLIST=[],MK=new Map(),HL=null;
@@ -676,6 +745,8 @@ async function init(){
     $('#fBrand').innerHTML=opt(D.brands,'Visi tinklai');
     $('#fMuni').innerHTML=opt(D.munis,'Visa Lietuva');
     try{const g=await fetch('geo.json?t='+Date.now());if(g.ok)GEO=((await g.json()).stations)||{}}catch(e){GEO={}}
+    try{const b=await fetch('brent.json?t='+Date.now());if(b.ok){const j=await b.json(),ds=Object.keys(j.days).sort().filter(d=>j.days[d][1]!=null);
+      if(ds.length>10)BRENT={dates:ds,usd:ds.map(d=>j.days[d][0]),eur:ds.map(d=>j.days[d][1])}}}catch(e){BRENT=null}
     $('#loading').style.display='none';$('#dash').style.display='block';
     render();
     renderKPIs();
@@ -690,7 +761,7 @@ function pickColor(t){const s=(t||'').toLowerCase();
   if(/dyzel/.test(s))return'#3fb950';if(/snd|duj|lpg/.test(s))return'#58a6ff';if(/98|premium/.test(s))return'#f85149';return'#ffb000'}
 function render(){
   const f=filt(),C=compute(D,f);
-  renderTrend(C,f);renderType(C);renderBrand(C,f);renderPromos();
+  renderTrend(C,f);renderBrent(f);renderType(C);renderBrand(C,f);renderPromos();
   $('#snapDate').textContent=C.latest>=0?D.dates[C.latest]:'';
 }
 // Viršutinės kortelės: PIGIAUSIA kaina Lietuvoje kiekvienam tipui (nepriklauso nuo grafikų filtrų).
@@ -741,6 +812,19 @@ function renderKPIs(){
       <div class="where">${volOf(s0,t)?.flag?'🔀 ':''}${esc(shortB(D.stations[s0][0]))} · ${esc(whereOf(s0,m))}${more>0?` <span>+${more}</span>`:''}${cur.d!==L?` · ${D.dates[cur.d].slice(5)}`:''}</div>
       <div class="delta ${cls}">${arrow} ${delta} <span style="color:var(--ink3);font-weight:400">vs ${prev?D.dates[prev.d].slice(5):'—'}</span></div>`;
     el.onclick=()=>showOnMap(s0,t);
+    box.appendChild(el);
+  }
+  const w=BRENT&&brentWeek();
+  if(w){
+    const el=document.createElement('button');el.type='button';el.className='kpi kpi-btn';el.style.setProperty('--accent','#bc8cff');
+    el.title='Rodyti Brent ir degalų kainų grafiką';
+    const up=w.pct>=0,cls=Math.abs(w.pct)<0.5?'flat':up?'up':'down';
+    const tD=D.types.findIndex(x=>/dyzel/i.test(x)),l=tD>=0?brentLink(tD):null;
+    el.innerHTML=`<div class="lbl">Brent nafta · ${w.date.slice(5)}</div><div class="val">${lt(w.usd,2)} <small>$/bbl</small></div>
+      <div class="where">${lt(w.eur,2)} €/bbl</div>
+      <div class="delta ${cls}">${up?'▲ +':'▼ '}${lt(w.pct)} % <span style="color:var(--ink3);font-weight:400">per savaitę</span></div>
+      ${w.pct>=5&&l&&l.r>=.3?`<div class="warn">⚠ Degalai paprastai brangsta po ~${l.L} d. d.</div>`:''}`;
+    el.onclick=()=>{const fc=$('#foldCharts');if(!fc.open){fc.open=true;render()}setTimeout(()=>$('#brentCard').scrollIntoView({behavior:'smooth',block:'start'}),120)};
     box.appendChild(el);
   }
 }
