@@ -42,11 +42,15 @@ jobs:
         run: node geocode.mjs
         continue-on-error: true     # koordinačių klaida nestabdo kainų atnaujinimo
 
+      - name: Brent naftos kaina (FRED/EIA + ECB kursas)
+        run: node brent.mjs
+        continue-on-error: true
+
       - name: Commit jei pasikeitė
         run: |
           git config user.name  "kuro-bot"
           git config user.email "actions@github.com"
-          git add data.json geo.json 2>/dev/null || git add data.json
+          git add data.json; git add geo.json brent.json 2>/dev/null || true
           if git diff --staged --quiet; then
             echo "Nieko naujo."
           else
