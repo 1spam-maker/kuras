@@ -144,6 +144,8 @@ details.fold>summary .tag{font-family:var(--mono);font-size:10px;background:var(
 .kpi-btn:hover{border-color:var(--amber-dim)}
 .kpi .where{font-size:12px;color:var(--ink2);margin:0 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kpi .where span{color:var(--ink3);font-family:var(--mono);font-size:11px}
+.kpi select.kmuni{width:100%;min-width:0;margin:8px 0 6px;font-family:var(--sans);font-size:14px;font-weight:600}
+.kpi-btn:disabled{cursor:default;opacity:.6}
 .field.grow{flex:2 1 240px}
 input[type=search]{font-family:var(--sans);font-size:13.5px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);
   border-radius:8px;padding:8px 10px;width:100%;min-width:0}
@@ -543,36 +545,50 @@ function render(){
 }
 // Viršutinės kortelės: PIGIAUSIA kaina Lietuvoje kiekvienam tipui (nepriklauso nuo grafikų filtrų).
 // Imama naujausia „pilna" diena tam tipui (≥50 % įprasto degalinių skaičiaus), kad dalinės ENA dienos neiškreiptų.
-function minForType(t,before){
-  const R=D.R,nD=D.dates.length,cnt=[];
-  for(let d=0;d<nD;d++){let c=0;for(let i=R.dayStart[d];i<R.dayStart[d+1];i++)if(R.t[i]===t)c++;cnt.push(c)}
-  const typical=Math.max(...cnt.slice(-10));
+function minForType(t,before,m){
+  const R=D.R,nD=D.dates.length,cnt=[],ok=i=>R.t[i]===t&&(m<0||D.stMuni[R.s[i]]===m);
+  for(let d=0;d<nD;d++){let c=0;for(let i=R.dayStart[d];i<R.dayStart[d+1];i++)if(ok(i))c++;cnt.push(c)}
+  const typical=Math.max(0,...cnt.slice(-10));if(!typical)return null;
   for(let d=(before??nD)-1;d>=0;d--){
-    if(cnt[d]<typical*0.5)continue;
+    if(!cnt[d]||cnt[d]<typical*0.5)continue;
     let p=Infinity,st=[];
-    for(let i=R.dayStart[d];i<R.dayStart[d+1];i++){if(R.t[i]!==t)continue;
+    for(let i=R.dayStart[d];i<R.dayStart[d+1];i++){if(!ok(i))continue;
       if(R.p[i]<p){p=R.p[i];st=[R.s[i]]}else if(R.p[i]===p)st.push(R.s[i])}
     return{d,p:p/1000,st};
   }
   return null;
 }
-const placeOf=s=>{const a=D.stations[s][2].replace(/ /g,' ').split(',')[0].trim();return /\d/.test(a)?D.stations[s][1]:a};
+// kur: visoje LT – „tinklas · miestas"; pasirinktoje savivaldybėje – „tinklas · gatvė"
+function whereOf(s,m){
+  const parts=shortA(D.stations[s][2]).split(',').map(x=>x.trim()).filter(Boolean);
+  if(m<0){const a=parts[0]||'';return /\d/.test(a)?D.stations[s][1]:a}
+  return parts.length>1&&!/\d/.test(parts[0])?parts.slice(1).join(', '):parts.join(', ');
+}
+let KMUNI=null;
 function renderKPIs(){
-  const box=$('#kpis');box.innerHTML='';
-  const L=D.dates.length-1,R=D.R,stN=new Set();for(let i=R.dayStart[L];i<R.dayStart[L+1];i++)stN.add(R.s[i]);
-  const info=document.createElement('div');info.className='kpi';info.style.setProperty('--accent','var(--ink3)');
-  info.innerHTML=`<div class="lbl">Naujausi duomenys</div><div class="val" style="font-size:22px">${D.dates[L]}</div>
-    <div class="delta flat">${stN.size} degalinių</div>`;box.appendChild(info);
+  const box=$('#kpis');
+  if(KMUNI===null){const saved=lsGet('kuras_kmuni');
+    KMUNI=saved==='*'?-1:(saved&&D.munis.includes(saved)?D.munis.indexOf(saved):Math.max(-1,D.munis.indexOf('Vilniaus m. sav.')))}
+  const m=KMUNI,L=D.dates.length-1,R=D.R,stN=new Set();
+  for(let i=R.dayStart[L];i<R.dayStart[L+1];i++)if(m<0||D.stMuni[R.s[i]]===m)stN.add(R.s[i]);
+  box.innerHTML='';
+  const sel=document.createElement('div');sel.className='kpi';sel.style.setProperty('--accent','var(--amber)');
+  sel.innerHTML=`<label class="lbl" for="kMuni">Pigiausia vietovėje</label>
+    <select id="kMuni" class="kmuni"><option value="-1">Visa Lietuva</option>${D.munis.map((x,i)=>`<option value="${i}"${i===m?' selected':''}>${esc(x)}</option>`).join('')}</select>
+    <div class="delta flat">${D.dates[L]} · ${stN.size} degalinių</div>`;
+  box.appendChild(sel);
+  sel.querySelector('#kMuni').onchange=e=>{KMUNI=+e.target.value;lsSet('kuras_kmuni',KMUNI<0?'*':D.munis[KMUNI]);renderKPIs()};
   for(const t of D.types.map((_,i)=>i).slice(0,4)){
-    const cur=minForType(t);if(!cur)continue;
-    const prev=minForType(t,cur.d);
+    const cur=minForType(t,undefined,m);
+    const el=document.createElement('button');el.type='button';el.className='kpi kpi-btn';el.style.setProperty('--accent',pickColor(D.types[t]));
+    if(!cur){el.disabled=true;el.innerHTML=`<div class="lbl">${esc(D.types[t])} · pigiausia</div><div class="val">—</div><div class="where">šioje vietovėje nėra kainų</div>`;box.appendChild(el);continue}
+    const prev=minForType(t,cur.d,m);
     let cls='flat',arrow='–',delta='';
     if(prev){const d=cur.p-prev.p;if(Math.abs(d)>=0.0005){cls=d>0?'up':'down';arrow=d>0?'▲':'▼';delta=(d>0?'+':'')+fmt(d)}else delta='0.000'}
     const s0=cur.st[0],more=cur.st.length-1;
-    const el=document.createElement('button');el.type='button';el.className='kpi kpi-btn';el.style.setProperty('--accent',pickColor(D.types[t]));
     el.title='Rodyti žemėlapyje';
     el.innerHTML=`<div class="lbl">${esc(D.types[t])} · pigiausia</div><div class="val">${fmt(cur.p)} <small>€/l</small></div>
-      <div class="where">${esc(shortB(D.stations[s0][0]))} · ${esc(placeOf(s0))}${more>0?` <span>+${more}</span>`:''}${cur.d!==L?` · ${D.dates[cur.d].slice(5)}`:''}</div>
+      <div class="where">${esc(shortB(D.stations[s0][0]))} · ${esc(whereOf(s0,m))}${more>0?` <span>+${more}</span>`:''}${cur.d!==L?` · ${D.dates[cur.d].slice(5)}`:''}</div>
       <div class="delta ${cls}">${arrow} ${delta} <span style="color:var(--ink3);font-weight:400">vs ${prev?D.dates[prev.d].slice(5):'—'}</span></div>`;
     el.onclick=()=>showOnMap(s0,t);
     box.appendChild(el);
