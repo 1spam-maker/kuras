@@ -125,6 +125,7 @@ footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);color:v
 .leaflet-popup-content{margin:12px 14px;font-family:var(--sans);font-size:13px;line-height:1.5}
 .leaflet-popup-content a{color:var(--amber)}
 .leaflet-container a.leaflet-popup-close-button{color:var(--ink2)}
+.leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.85) saturate(.5)}
 .leaflet-control-attribution{background:rgba(13,17,23,.7)!important;color:var(--ink3)!important}
 .leaflet-control-attribution a{color:var(--ink2)!important}
 .pp-price{font-family:var(--mono);font-size:18px;font-weight:700}
@@ -385,8 +386,9 @@ function latestByStation(t){
 function initMap(){
   if(typeof L==='undefined'){$('.mapcard').style.display='none';return}
   MAP=L.map('map',{preferCanvas:true,minZoom:6}).setView([55.25,23.9],7);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd',
-    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'}).addTo(MAP);
+  // OSM standartiniai žemėlapio vaizdai (be API rakto); tamsinami CSS filtru (.leaflet-tile-pane)
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,
+    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> autoriai'}).addTo(MAP);
   LAYER=L.layerGroup().addTo(MAP);
   MAP.on('click',e=>setMe(e.latlng.lat,e.latlng.lng));
   const t=D.types.findIndex(x=>/95/.test(x));
