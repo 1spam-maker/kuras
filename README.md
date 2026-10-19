@@ -67,3 +67,16 @@ ENA gali bet kada pakeisti dalinimosi nustatymus ar nuorodas — tai struktūrin
 | `index.html` | Viešas dashboard |
 | `data.json` | Kaupiama istorija (auto) |
 | `.github/workflows/daily.yml` | Kasdienis cron |
+
+## Atnaujinimo laikas (nuo 2026-10-19)
+
+Workflow paleidžiamas ~7:47 LT (an.–šešt., saugiklis) ir ~12, ~15, ~17 val. LT darbo dienomis.
+ENA kainas renka 10 val. ir paskelbia vėliau, todėl ryte matomos praėjusios darbo dienos kainos.
+`data.json` perrašomas tik tada, kai duomenys pasikeitė.
+
+## Akcijos (`akcijos.json`)
+
+Tinklų nuolaidų taisyklės, kurias puslapis atima iš ENA kainų (pasirinkimas „Kaina su nuolaida").
+Redaguoji tiesiai GitHub'e: `dienos` 1=Pr…7=Sk, `sventes: true` – galioja ir LT švenčių dienomis,
+`galioja_iki` – pasibaigusios akcijos automatiškai nebėra rodomos. Tam pačiam tinklui tą pačią dieną
+taikoma didžiausia nuolaida (nesumuojama). `tinklas` turi tiksliai sutapti su ENA pavadinimu.

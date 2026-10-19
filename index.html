@@ -67,6 +67,25 @@ tr:hover td{background:#1a212c}
 .price-pill{font-family:var(--mono);font-weight:600;padding:2px 8px;border-radius:6px;background:var(--panel2)}
 .lo{color:var(--green)}.hi{color:var(--red)}
 footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);color:var(--ink3);font-size:11.5px;font-family:var(--mono);text-align:center;line-height:1.8}
+/* v4: valdikliai telefone, akcijos, nuolaidos */
+.controls .field{flex:1 1 150px;min-width:0}
+.controls select{width:100%;min-width:0;max-width:100%}
+.sub.upd{font-size:11.5px;color:var(--ink3);margin-top:2px}
+.promos{margin-bottom:18px}
+.promo-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+.promo{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+.promo.on{border-color:#2f6b3a;background:#14261a}
+.promo .amt{font-family:var(--mono);font-weight:700;font-size:18px;color:var(--green);min-width:62px;line-height:1.3}
+.promo .ttl{font-weight:600;font-size:13.5px}
+.promo .meta{color:var(--ink2);font-size:12px;margin-top:2px}
+.promo .meta a{color:var(--ink3)}
+.badge{display:inline-block;font-family:var(--mono);font-size:10.5px;padding:1px 7px;border-radius:5px;background:#1f4d2a;color:#7ee28f;margin-left:6px;vertical-align:1px}
+.badge.next{background:var(--panel);color:var(--ink2)}
+.badge.warn{background:#4d3a12;color:var(--amber)}
+.promo-note{color:var(--ink3);font-size:11.5px;margin-top:12px;line-height:1.6}
+.nodisc .eff-col{display:none}
+.eff{font-family:var(--mono);font-weight:600;color:var(--green)}
+.eff small{color:var(--ink3);font-weight:400;margin-left:4px}
 </style>
 </head>
 <body>
@@ -77,6 +96,7 @@ footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);color:v
     <div>
       <h1>Kuro kainos Lietuvoje</h1>
       <div class="sub" id="subInfo">kraunama…</div>
+      <div class="sub upd" id="updInfo"></div>
     </div>
   </div>
   <a class="src-link" href="https://www.ena.lt/degalu-kainos-degalinese/" target="_blank">ENA šaltinis ↗</a>
@@ -97,6 +117,16 @@ footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);color:v
     <div class="field"><label>Laikotarpis</label><select id="fPeriod">
       <option value="0">Visas</option><option value="90">90 d. d.</option><option value="30">30 d. d.</option><option value="10">10 d. d.</option>
     </select></div>
+    <div class="field"><label>Kaina su nuolaida</label><select id="fDisc">
+      <option value="none">Be nuolaidų (ENA)</option><option value="today">Šiandien</option>
+      <option value="1">Pirmadienį</option><option value="2">Antradienį</option><option value="3">Trečiadienį</option>
+      <option value="4">Ketvirtadienį</option><option value="5">Penktadienį</option><option value="6">Šeštadienį</option><option value="7">Sekmadienį</option>
+    </select></div>
+  </div>
+  <div class="card full promos" id="promoCard" style="display:none">
+    <h2>Degalinių akcijos <span class="tag" id="promoTag"></span></h2>
+    <div class="promo-list" id="promoList"></div>
+    <div class="promo-note">Nuolaidos atimamos iš ENA paskelbtų kainų (darbo dienų 10 val.). Savaitgalio kainų ENA neskelbia, todėl savaitgalio kaina su nuolaida skaičiuojama nuo paskutinės paskelbtos kainos ir yra apytikslė. Tam pačiam tinklui tą pačią dieną taikoma didžiausia nuolaida, jos nesumuojamos. Sąlygas visada pasitikrink tinklo puslapyje; sąrašas redaguojamas faile <code>akcijos.json</code>.</div>
   </div>
   <div class="grid"><div class="card full">
     <h2>Kainų tendencija laike <span class="tag" id="trendTag">€/l</span></h2>
@@ -114,11 +144,11 @@ footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);color:v
   </div>
   <div class="card full">
     <h2>Detali lentelė <span class="tag" id="tblCount"></span></h2>
-    <div style="overflow-x:auto"><table id="tbl">
+    <div style="overflow-x:auto"><table id="tbl" class="nodisc">
       <thead><tr>
         <th data-k="type">Tipas</th><th data-k="brand">Tinklas</th>
         <th data-k="muni">Savivaldybė</th><th data-k="addr">Adresas</th>
-        <th data-k="price" class="num">Kaina €/l</th>
+        <th data-k="price" class="num">Kaina €/l</th><th data-k="eff" class="num eff-col">Su nuolaida</th>
       </tr></thead><tbody id="tblBody"></tbody>
     </table></div>
   </div>
@@ -173,13 +203,72 @@ function compute(D,f){
   const latest=dIdx.length?dIdx[dIdx.length-1]:-1,prev=dIdx.length>1?dIdx[dIdx.length-2]:-1;
   const typesPresent=[...Array(nT).keys()].filter(t=>dIdx.some(d=>cnt[d*nT+t]));
   const bt=f.t>=0?f.t:Math.max(0,D.types.findIndex(t=>/95/.test(t))); // tinklų palyginimas — vienas tipas
-  const day=[],brandAgg=new Map(),stSet=new Set();
+  const day=[],brandAgg=new Map(),stSet=new Set(),eff=new Map();let btSum=0,btN=0;
+  const tgt=discTarget(f.disc);
   if(latest>=0)for(let i=R.dayStart[latest];i<R.dayStart[latest+1];i++){
     if(!pass(i))continue;day.push(i);stSet.add(R.s[i]);
+    const p=R.p[i]/1000,e=tgt?p-discEUR(D.stations[R.s[i]][0],D.types[R.t[i]],tgt.date):p;eff.set(i,e);
     if(R.t[i]!==bt)continue;
-    const b=D.stBrand[R.s[i]],a=brandAgg.get(b)||{s:0,n:0};a.s+=R.p[i]/1000;a.n++;brandAgg.set(b,a);
+    btSum+=p;btN++;
+    const b=D.stBrand[R.s[i]],a=brandAgg.get(b)||{e:0,n:0,st:new Set()};a.e+=e;a.n++;a.st.add(R.s[i]);brandAgg.set(b,a);
   }
-  return{dIdx,latest,prev,typesPresent,val,day,brandAgg,bt,stations:stSet.size};
+  return{dIdx,latest,prev,typesPresent,val,day,brandAgg,bt,btAvg:btN?btSum/btN:null,eff,tgt,stations:stSet.size};
+}
+
+// ===== akcijos / nuolaidos =====
+let PROMOS=[];
+const WD=['','Pr','An','Tr','Kt','Pn','Št','Sk'];
+const WDL=['','Pirmadienį','Antradienį','Trečiadienį','Ketvirtadienį','Penktadienį','Šeštadienį','Sekmadienį'];
+const todayLT=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Vilnius'}).format(new Date());
+const addDays=(iso,n)=>{const d=new Date(iso+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
+const isoWd=iso=>{const w=new Date(iso+'T12:00:00Z').getUTCDay();return w===0?7:w};
+function easter(y){const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),
+  h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*m+114)/31),da=((h+l-7*m+114)%31)+1;
+  return`${y}-${String(mo).padStart(2,'0')}-${String(da).padStart(2,'0')}`}
+function isHolidayLT(iso){ // LR valstybinės šventės (poilsio dienos)
+  if(['01-01','02-16','03-11','05-01','06-24','07-06','08-15','11-01','11-02','12-24','12-25','12-26'].includes(iso.slice(5)))return true;
+  const e=easter(+iso.slice(0,4));return iso===e||iso===addDays(e,1);
+}
+// pasirinkta diena → konkreti data (artimiausia tokia savaitės diena, įskaitant šiandien)
+function discTarget(v){
+  if(v==='none')return null;
+  const t=todayLT();
+  if(v==='today')return{date:t,wd:isoWd(t),label:'šiandien'};
+  const wd=+v,date=addDays(t,(wd-isoWd(t)+7)%7);
+  return{date,wd,label:`${WDL[wd].toLowerCase()} (${date.slice(5)})`};
+}
+const promoActiveOn=(p,date)=>(!p.galioja_iki||date<=p.galioja_iki)&&(!p.galioja_nuo||date>=p.galioja_nuo)
+  &&((p.dienos||[]).includes(isoWd(date))||(p.sventes&&isHolidayLT(date)));
+// didžiausia nuolaida (€/l) tinklui+tipui konkrečią dieną; nesumuojama
+function discEUR(brand,type,date){
+  let best=0;for(const p of PROMOS){if(p.tinklas!==brand)continue;if(p.tipai&&!p.tipai.includes(type))continue;
+    if(promoActiveOn(p,date)&&p.nuolaida_ct>best)best=p.nuolaida_ct}
+  return best/100;
+}
+function fmtDays(p){
+  const d=[...(p.dienos||[])].sort((a,b)=>a-b);let s;
+  if(d.length===7)s='kasdien';
+  else if(d.length>1&&d.every((x,i)=>i===0||x===d[i-1]+1))s=`${WD[d[0]]}–${WD[d.at(-1)]}`;
+  else s=d.map(x=>WD[x]).join(', ');
+  return p.sventes?s+' ir šventėmis':s;
+}
+function renderPromos(){
+  const card=$('#promoCard');
+  const t=todayLT(),live=PROMOS.filter(p=>!p.galioja_iki||t<=p.galioja_iki);
+  if(!live.length){card.style.display='none';return}
+  card.style.display='block';
+  const nextOn=p=>{for(let i=0;i<14;i++){const d=addDays(t,i);if(promoActiveOn(p,d))return d}return null};
+  const items=live.map(p=>({p,next:nextOn(p)})).sort((a,b)=>String(a.next).localeCompare(String(b.next))||b.p.nuolaida_ct-a.p.nuolaida_ct);
+  $('#promoTag').textContent=`šiandien ${WD[isoWd(t)]} ${t.slice(5)}`;
+  $('#promoList').innerHTML=items.map(({p,next})=>{
+    const on=next===t;
+    let badge=on?'<span class="badge">galioja šiandien</span>':next?`<span class="badge next">nuo ${WD[isoWd(next)]} ${next.slice(5)}</span>`:'';
+    if(p.galioja_iki&&p.galioja_iki<=addDays(t,10))badge+=`<span class="badge warn">iki ${p.galioja_iki.slice(5)}</span>`;
+    const short=p.tinklas.replace(/^(UAB|AB)\s+/,'').replace(/\s+(Lietuva|LT)$/,'');
+    return`<div class="promo${on?' on':''}"><div class="amt">−${String(p.nuolaida_ct).replace('.',',')}<small style="font-size:11px"> ct</small></div>
+      <div><div class="ttl">${esc(short)} · ${esc(p.pavadinimas)}${badge}</div>
+      <div class="meta">${esc(fmtDays(p))}${p.tipai?' · '+esc(p.tipai.join(', ')):' · visi degalai'}${p.galioja_iki?' · iki '+p.galioja_iki:''}</div>
+      <div class="meta">${esc(p.salyga||'')}${p.saltinis?` · <a href="${esc(p.saltinis)}" target="_blank" rel="noopener">šaltinis ↗</a>`:''}</div></div></div>`}).join('');
 }
 
 // ===== UI =====
@@ -187,7 +276,9 @@ async function init(){
   try{
     const r=await fetch('data.json?t='+Date.now());
     if(!r.ok)throw new Error('data.json nerastas (HTTP '+r.status+')');
-    D=build(await r.json());
+    const raw=await r.json();D=build(raw);
+    try{const a=await fetch('akcijos.json?t='+Date.now());if(a.ok)PROMOS=((await a.json()).akcijos)||[]}catch(e){PROMOS=[]}
+    if(raw.updated)$('#updInfo').textContent='Atnaujinta '+new Intl.DateTimeFormat('lt-LT',{timeZone:'Europe/Vilnius',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(raw.updated))+' · tikrinama ~8, 12, 15 ir 17 val. darbo dienomis';
     if(!D.R.n)throw new Error('Duomenų dar nėra. Jie atsiras po artimiausio sėkmingo scrape paleidimo.');
     $('#subInfo').textContent=`${D.dates.length} d. · ${D.dates[0]} – ${D.dates.at(-1)} · ${D.R.n.toLocaleString('lt-LT')} kainų`;
     const opt=(arr,all)=>`<option value="-1">${all}</option>`+arr.map((v,i)=>`<option value="${i}">${esc(v)}</option>`).join('');
@@ -200,12 +291,12 @@ async function init(){
     $('#loading').style.display='none';const el=$('#error');el.style.display='block';el.textContent='⚠️ '+e.message;
   }
 }
-const filt=()=>({t:+$('#fType').value,b:+$('#fBrand').value,m:+$('#fMuni').value,agg:$('#fAgg').value,period:+$('#fPeriod').value});
+const filt=()=>({t:+$('#fType').value,b:+$('#fBrand').value,m:+$('#fMuni').value,agg:$('#fAgg').value,period:+$('#fPeriod').value,disc:$('#fDisc').value});
 function pickColor(t){const s=(t||'').toLowerCase();
   if(/dyzel/.test(s))return'#3fb950';if(/snd|duj|lpg/.test(s))return'#58a6ff';if(/98|premium/.test(s))return'#f85149';return'#ffb000'}
 function render(){
   const f=filt(),C=compute(D,f);
-  renderKPIs(C,f);renderTrend(C,f);renderType(C);renderBrand(C);renderTable(C);
+  renderKPIs(C,f);renderTrend(C,f);renderType(C);renderBrand(C,f);renderTable(C);renderPromos();
   $('#snapDate').textContent=C.latest>=0?D.dates[C.latest]:'';
 }
 function renderKPIs(C,f){
@@ -244,30 +335,42 @@ function renderType(C){
     options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}},
       scales:{y:{grid:{color:C_GRID},ticks:{callback:v=>v.toFixed(2)}},x:{grid:{display:false}}}}});
 }
-function renderBrand(C){
-  destroy('brand');$('#brandTag').textContent=`${D.types[C.bt]||''} · vidurkis`;
-  const data=[...C.brandAgg].map(([b,a])=>({b:D.brands[b],v:a.s/a.n})).sort((x,y)=>x.v-y.v).slice(0,8);
+function renderBrand(C,f){
+  destroy('brand');
+  const minSt=f.b>=0?1:5;
+  $('#brandTag').textContent=`${D.types[C.bt]||''} · ct nuo vidurkio${C.tgt?' · su nuolaidomis '+WD[C.tgt.wd]:''}`;
+  $('#brandChart').setAttribute('aria-label',`Tinklai${minSt>1?' su ≥5 degalinėmis':''}, ${D.types[C.bt]} kainos skirtumas nuo vidurkio centais`);
+  if(C.btAvg==null)return;
+  const data=[...C.brandAgg].filter(([,a])=>a.st.size>=minSt)
+    .map(([b,a])=>({b:D.brands[b].replace(/^(UAB|AB)\s+/,''),v:(a.e/a.n-C.btAvg)*100,avg:a.e/a.n,n:a.st.size}))
+    .sort((x,y)=>x.v-y.v).slice(0,8);
   charts.brand=new Chart($('#brandChart'),{type:'bar',data:{labels:data.map(d=>d.b),
-    datasets:[{data:data.map(d=>+d.v.toFixed(3)),backgroundColor:data.map((_,i)=>i===0?'#3fb950':'#3a4a5e'),borderRadius:6}]},
+    datasets:[{data:data.map(d=>+d.v.toFixed(1)),backgroundColor:data.map(d=>d.v<0?'#3fb950':'#6e4a4a'),borderRadius:6}]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,animation:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.x.toFixed(3)+' €/l'}}},
-      scales:{x:{grid:{color:C_GRID},ticks:{callback:v=>v.toFixed(2)}},y:{grid:{display:false}}}}});
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{const d=data[c.dataIndex];
+        return`${d.v>0?'+':''}${d.v.toFixed(1)} ct · vid. ${d.avg.toFixed(3)} €/l · ${d.n} degalinės`}}}},
+      scales:{x:{grid:{color:C_GRID},ticks:{callback:v=>(v>0?'+':'')+v+' ct'}},y:{grid:{display:false}}}}});
 }
 let sortKey='price',sortDir=1,lastC=null;
 function renderTable(C){
   lastC=C;const R=D.R;
-  const key={type:i=>D.types[R.t[i]],brand:i=>D.stations[R.s[i]][0],muni:i=>D.stations[R.s[i]][1],addr:i=>D.stations[R.s[i]][2],price:i=>R.p[i]};
-  const k=key[sortKey];
-  const rows=[...C.day].sort((a,b)=>sortKey==='price'?(k(a)-k(b))*sortDir:String(k(a)).localeCompare(String(k(b)),'lt')*sortDir).slice(0,400);
+  const key={type:i=>D.types[R.t[i]],brand:i=>D.stations[R.s[i]][0],muni:i=>D.stations[R.s[i]][1],addr:i=>D.stations[R.s[i]][2],price:i=>R.p[i],eff:i=>C.eff.get(i)};
+  if(sortKey==='eff'&&!C.tgt)sortKey='price';
+  $('#tbl').classList.toggle('nodisc',!C.tgt);
+  const k=key[sortKey],num=sortKey==='price'||sortKey==='eff';
+  const rows=[...C.day].sort((a,b)=>num?(k(a)-k(b))*sortDir:String(k(a)).localeCompare(String(k(b)),'lt')*sortDir).slice(0,400);
   let lo=Infinity,hi=-Infinity;for(const i of C.day){if(R.p[i]<lo)lo=R.p[i];if(R.p[i]>hi)hi=R.p[i]}
   $('#tblBody').innerHTML=rows.map(i=>{const s=D.stations[R.s[i]],cls=R.p[i]===lo?'lo':R.p[i]===hi?'hi':'';
     return`<tr><td>${esc(D.types[R.t[i]])}</td><td>${esc(s[0])}</td><td>${esc(s[1])}</td><td>${esc(s[2])}</td>
-      <td class="num"><span class="price-pill ${cls}">${fmt(R.p[i]/1000)}</span></td></tr>`}).join('');
-  $('#tblCount').textContent=C.latest>=0?`${D.dates[C.latest]} · ${C.day.length} kainų · rodoma ${rows.length}`:'';
+      <td class="num"><span class="price-pill ${cls}">${fmt(R.p[i]/1000)}</span></td>
+      <td class="num eff-col">${C.tgt?(()=>{const e=C.eff.get(i),d=Math.round((R.p[i]/1000-e)*100);
+        return d>0?`<span class="eff">${fmt(e)}<small>−${d} ct</small></span>`:`<span style="color:var(--ink3);font-family:var(--mono)">${fmt(e)}</span>`})():''}</td></tr>`}).join('');
+  $('#tblCount').textContent=C.latest>=0?`${D.dates[C.latest]} · ${C.day.length} kainų · rodoma ${rows.length}${C.tgt?' · nuolaidos '+C.tgt.label:''}`:'';
 }
 document.querySelectorAll('#tbl th').forEach(th=>th.onclick=()=>{
   const k=th.dataset.k;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=k==='price'?1:1}if(lastC)renderTable(lastC)});
 ['fType','fBrand','fMuni','fAgg','fPeriod'].forEach(id=>$('#'+id).onchange=render);
+$('#fDisc').onchange=()=>{if($('#fDisc').value!=='none'){sortKey='eff';sortDir=1}render()};
 init();
 </script>
 </body>

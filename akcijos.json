@@ -1,0 +1,43 @@
+{
+  "_kaip_redaguoti": "dienos: 1=Pr ... 7=Sk. sventes:true = galioja ir LT švenčių dienomis. tipai: praleisk = visi degalai, arba sąrašas, pvz. [\"95 benzinas\",\"Dyzelinas\"]. tinklas turi sutapti su ENA pavadinimu. galioja_iki: YYYY-MM-DD arba null. Tą pačią dieną tam pačiam tinklui taikoma DIDŽIAUSIA nuolaida (nesumuojama).",
+  "patikrinta": "2026-10-19",
+  "akcijos": [
+    {
+      "tinklas": "UAB Circle K Lietuva",
+      "pavadinimas": "Savaitgalio premija",
+      "nuolaida_ct": 10,
+      "dienos": [5, 6, 7],
+      "salyga": "Penktadienį aktyvuoti Circle K programėlėje (Premijos); 1 kartą per pylimą; ne verslo klientams",
+      "galioja_iki": "2026-11-04",
+      "saltinis": "https://www.circlek.lt/10ct"
+    },
+    {
+      "tinklas": "UAB Viada LT",
+      "pavadinimas": "Nuolaidų savaitgaliai",
+      "nuolaida_ct": 10,
+      "dienos": [6, 7],
+      "sventes": true,
+      "salyga": "Su ViadaPLUS kortele ar programėle; ne verslo mokėjimo kortelėms",
+      "galioja_iki": null,
+      "saltinis": "https://www.viada.lt/akcija/nuolaidu-savaitgaliai/"
+    },
+    {
+      "tinklas": "UAB Viada LT",
+      "pavadinimas": "ViadaPLUS lojalumo nuolaida",
+      "nuolaida_ct": 3,
+      "dienos": [1, 2, 3, 4, 5, 6, 7],
+      "salyga": "ViadaPLUS kortelė; 3,5 ct, jei praėjusį mėnesį pilta >70 l",
+      "galioja_iki": null,
+      "saltinis": "https://www.viada.lt/korteles-ir-lojalumas/viadaplus-lojalumas/"
+    },
+    {
+      "tinklas": "UAB Baltic Petroleum",
+      "pavadinimas": "Lojalumo kortelė",
+      "nuolaida_ct": 3,
+      "dienos": [1, 2, 3, 4, 5, 6, 7],
+      "salyga": "Baltic Petroleum kortelė; netaikoma „Kaina grynaisiais+“ degalinėse",
+      "galioja_iki": null,
+      "saltinis": "https://balticpetroleum.lt/korteles-privatiems"
+    }
+  ]
+}
