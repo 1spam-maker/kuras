@@ -358,7 +358,7 @@ function compute(D,f){
   const tgt=discTarget(f.disc);
   if(latest>=0)for(let i=R.dayStart[latest];i<R.dayStart[latest+1];i++){
     if(!pass(i))continue;day.push(i);stSet.add(R.s[i]);
-    const p=R.p[i]/1000,e=tgt?p-discEUR(D.stations[R.s[i]],D.types[R.t[i]],tgt.date):p;eff.set(i,e);
+    const p=R.p[i]/1000,e=tgt?p-discEUR(D.stations[R.s[i]],D.types[R.t[i]],tgt.date,p):p;eff.set(i,e);
     if(R.t[i]!==bt)continue;
     btSum+=p;btN++;
     const b=D.stBrand[R.s[i]],a=brandAgg.get(b)||{e:0,n:0,st:new Set()};a.e+=e;a.n++;a.st.add(R.s[i]);brandAgg.set(b,a);
@@ -367,7 +367,7 @@ function compute(D,f){
 }
 
 // ===== akcijos / nuolaidos =====
-let PROMOS=[];
+let PROMOS=[],SUPER3={},SUPER3_SRC='';const SUPER3_NET='UAB Viada LT';
 const WD=['','Pr','An','Tr','Kt','Pn','Št','Sk'];
 const WDL=['','Pirmadienį','Antradienį','Trečiadienį','Ketvirtadienį','Penktadienį','Šeštadienį','Sekmadienį'];
 const todayLT=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Vilnius'}).format(new Date());
@@ -400,12 +400,17 @@ function promoAt(p,st){
   return p._a.some(f=>a.includes(f));
 }
 // didžiausia nuolaida (€/l) degalinei (st=[tinklas,savivaldybė,adresas]) + tipui konkrečią dieną; nesumuojama
-function discInfo(st,type,date){
+// price (€/l, ENA kaina) reikalinga fiksuotos kainos akcijoms (Viada „Super trečiadienis“)
+function discInfo(st,type,date,price){
   let best=null;for(const p of PROMOS){if(p.tinklas!==st[0])continue;if(p.tipai&&!p.tipai.includes(type))continue;
     if(promoActiveOn(p,date)&&(!best||p.nuolaida_ct>best.nuolaida_ct)&&promoAt(p,st))best=p}
+  const fx=SUPER3[date]?.[type];
+  if(st[0]===SUPER3_NET&&fx!=null&&price!=null){const ct=Math.round((price-fx)*1000)/10;
+    if(ct>0&&(!best||ct>best.nuolaida_ct))best={tinklas:SUPER3_NET,pavadinimas:'Super trečiadienis',nuolaida_ct:ct,fiks:fx,
+      salyga:`Fiksuota kaina ${lt(fx,3)} €/l su ViadaPLUS; tik šį trečiadienį`}}
   return best;
 }
-const discEUR=(st,type,date)=>{const p=discInfo(st,type,date);return p?p.nuolaida_ct/100:0};
+const discEUR=(st,type,date,price)=>{const p=discInfo(st,type,date,price);return p?p.nuolaida_ct/100:0};
 function fmtDays(p){
   const d=[...(p.dienos||[])].sort((a,b)=>a-b);let s;
   if(d.length===7)s='kasdien';
@@ -421,11 +426,24 @@ function renderPromos(){
   const nextOn=p=>{for(let i=0;i<14;i++){const d=addDays(t,i);if(promoActiveOn(p,d))return d}return null};
   const items=live.map(p=>({p,next:nextOn(p)})).sort((a,b)=>String(a.next).localeCompare(String(b.next))||b.p.nuolaida_ct-a.p.nuolaida_ct);
   $('#promoTag').textContent=`šiandien ${WD[isoWd(t)]} ${t.slice(5)}`;
+  // Viada „Super trečiadieniai“: fiksuotos kainos, skelbiamos trečiadienį 00:00
+  const s3d=Object.keys(SUPER3).sort(),s3last=s3d.at(-1);
+  if(s3last&&s3last>=addDays(t,-35)){
+    const nextW=addDays(t,(3-isoWd(t)+7)%7),known=SUPER3[nextW],fmtP=o=>Object.entries(o).map(([k,v])=>`${k} ${lt(v,3)}`).join(' · ');
+    items.push({next:nextW,p:{tinklas:SUPER3_NET,pavadinimas:'Super trečiadienis',dienos:[3],super:true,
+      meta:known?`Šiandien su ViadaPLUS: ${fmtP(known)} €/l`:`Kainos skelbiamos trečiadienį 00:00. Paskutinį kartą (${s3last.slice(5)}): ${fmtP(SUPER3[s3last])} €/l`,
+      salyga:'Fiksuota kaina su ViadaPLUS kortele ar programėle; tik tą trečiadienį; nesumuojama; HVO100 netaikoma',saltinis:SUPER3_SRC}});
+    items.sort((a,b)=>String(a.next).localeCompare(String(b.next))||(b.p.super?99:b.p.nuolaida_ct)-(a.p.super?99:a.p.nuolaida_ct));
+  }
   $('#promoList').innerHTML=items.map(({p,next})=>{
     const on=next===t;
     let badge=on?'<span class="badge">galioja šiandien</span>':next?`<span class="badge next">nuo ${WD[isoWd(next)]} ${next.slice(5)}</span>`:'';
     if(p.galioja_iki&&p.galioja_iki<=addDays(t,10))badge+=`<span class="badge warn">iki ${p.galioja_iki.slice(5)}</span>`;
     const short=p.tinklas.replace(/^(UAB|AB)\s+/,'').replace(/\s+(Lietuva|LT)$/,'');
+    if(p.super)return`<div class="promo${on?' on':''}"><div class="amt" style="font-size:15px;line-height:1.15">fiks.<br><small style="font-size:11px">kaina</small></div>
+      <div><div class="ttl">Viada · Super trečiadienis${badge}</div>
+      <div class="meta">Tr · ${esc(p.meta)}</div>
+      <div class="meta">${esc(p.salyga)}${p.saltinis?` · <a href="${esc(p.saltinis)}" target="_blank" rel="noopener">šaltinis ↗</a>`:''}</div></div></div>`;
     return`<div class="promo${on?' on':''}"><div class="amt">−${String(p.nuolaida_ct).replace('.',',')}<small style="font-size:11px"> ct</small></div>
       <div><div class="ttl">${esc(short)} · ${esc(p.pavadinimas)}${badge}</div>
       <div class="meta">${esc(fmtDays(p))}${p.tipai?' · '+esc(p.tipai.join(', ')):' · visi degalai'}${p.galioja_iki?' · iki '+p.galioja_iki:''}${p.adresai?' · tik '+p.adresai.length+' degalinėse':''}</div>
@@ -593,7 +611,7 @@ function renderMap(){
   if(!MAP)return;
   const{t,tgt}=mapState(),type=D.types[t],rows=latestByStation(t),list=[];
   for(const[s,v]of rows){const g=GEO[D.stations[s].join('|')];if(!g)continue;
-    const pr=tgt?discInfo(D.stations[s],type,tgt.date):null,disc=pr?pr.nuolaida_ct/100:0;
+    const pr=tgt?discInfo(D.stations[s],type,tgt.date,v.p):null,disc=pr?pr.nuolaida_ct/100:0;
     list.push({s,lat:g[0],lon:g[1],prec:g[2],p:v.p,e:v.p-disc,disc,promo:pr,day:D.dates[v.d]})}
   const es=list.map(x=>x.e).sort((a,b)=>a-b),q=k=>es[Math.min(es.length-1,Math.floor(es.length*k))],th=[q(.2),q(.4),q(.6),q(.8)];
   const colOf=e=>{const i=th.findIndex(x=>e<=x);return PCOL[i<0?4:i]};
@@ -748,6 +766,7 @@ async function init(){
     if(!r.ok)throw new Error('Nepavyko įkelti duomenų. Pabandyk vėliau.');
     const raw=await r.json();D=build(raw);computeVol();
     try{const a=await fetch('akcijos.json?t='+Date.now());if(a.ok)PROMOS=((await a.json()).akcijos)||[]}catch(e){PROMOS=[]}
+    try{const a=await fetch('super3.json?t='+Date.now());if(a.ok){const j=await a.json();SUPER3=j.days||{};SUPER3_SRC=j.saltinis||''}}catch(e){SUPER3={}}
     if(raw.updated)$('#updInfo').textContent='Atnaujinta '+new Intl.DateTimeFormat('lt-LT',{timeZone:'Europe/Vilnius',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(raw.updated))+' · tikrinama darbo dienomis 10:20, 11:20, 13:20 ir 16:20';
     if(!D.R.n)throw new Error('Duomenų dar nėra. Jie atsiras po artimiausio sėkmingo scrape paleidimo.');
     $('#subInfo').textContent=`${D.dates.length} d. · ${D.dates[0]} – ${D.dates.at(-1)} · ${D.R.n.toLocaleString('lt-LT')} kainų`;
@@ -902,7 +921,7 @@ function renderTable(){
   for(const ti of types)for(const[s,v]of latestByStation(ti)){
     if(b>=0&&D.stBrand[s]!==b)continue;if(m>=0&&D.stMuni[s]!==m)continue;
     if(words.length){const txt=ST_TEXT[s]+' '+fold(D.types[ti]);if(!words.every(w=>txt.includes(w)))continue}
-    const st=D.stations[s],pr=tgt?discInfo(st,D.types[ti],tgt.date):null,disc=pr?pr.nuolaida_ct/100:0;
+    const st=D.stations[s],pr=tgt?discInfo(st,D.types[ti],tgt.date,v.p):null,disc=pr?pr.nuolaida_ct/100:0;
     rows.push({s,t:ti,p:v.p,e:v.p-disc,disc,day:D.dates[v.d]});
   }
   if(sortKey==='eff'&&!tgt)sortKey='price';

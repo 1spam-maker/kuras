@@ -82,3 +82,6 @@ Redaguoji tiesiai GitHub'e: `dienos` 1=Pr…7=Sk, `sventes: true` – galioja ir
 taikoma didžiausia nuolaida (nesumuojama). `tinklas` turi tiksliai sutapti su ENA pavadinimu.
 `adresai` (nebūtina) – akcija tik nurodytose degalinėse, pvz. `["Vilnius, Ozo g. 12"]`; lyginama su ENA adresu
 nepaisant raidžių dydžio, lietuviškų raidžių ir skyrybos.
+
+Viada „SUPER trečiadieniai“ (fiksuotos kainos su ViadaPLUS) renkami automatiškai: `super3.mjs` trečiadieniais
+nuskaito https://www.viada.lt/akcija/super-treciadieniai/ ir įrašo kainas į `super3.json` (ranka redaguoti nereikia).

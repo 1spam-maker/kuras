@@ -51,11 +51,15 @@ jobs:
         run: node brent.mjs
         continue-on-error: true
 
+      - name: Viada „Super trečiadieniai“ (tik trečiadieniais)
+        run: node super3.mjs
+        continue-on-error: true
+
       - name: Commit jei pasikeitė
         run: |
           git config user.name  "kuro-bot"
           git config user.email "actions@github.com"
-          for f in data.json geo.json brent.json; do if [ -f "$f" ]; then git add "$f"; fi; done
+          for f in data.json geo.json brent.json super3.json; do if [ -f "$f" ]; then git add "$f"; fi; done
           if git diff --staged --quiet; then
             echo "Nieko naujo."
           else
