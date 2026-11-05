@@ -7,6 +7,9 @@ name: Kuro kainų scrape
 #  - dieniniai paleidimai paima šios dienos kainas, kai tik ENA jas paskelbia.
 # Laikas UTC. LT vasarą = UTC+3, žiemą (nuo 10-25) = UTC+2.
 # Minutės ne :00/:05, nes valandų pradžioje GitHub labiausiai vėlina paleidimus.
+# DĖMESIO: nuo 2026-10 pabaigos GitHub „schedule“ paleidimus vėlina 6–10 val., todėl
+# pagrindinis paleidiklis – išorinis cron (cron-job.org), kviečiantis workflow_dispatch
+# per GitHub API (paleidžiama iškart). Šie schedule lieka kaip atsarginis variantas.
 on:
   schedule:
     - cron: '47 4 * * 2-6'    # ~07:47 LT vasarą / 06:47 žiemą (an.–šešt.)
@@ -42,7 +45,7 @@ jobs:
         run: node geocode.mjs
         continue-on-error: true     # koordinačių klaida nestabdo kainų atnaujinimo
 
-      - name: Brent naftos kaina (FRED/EIA + ECB kursas)
+      - name: Brent naftos kaina (ICE ateities sandoris + ECB kursas)
         run: node brent.mjs
         continue-on-error: true
 
