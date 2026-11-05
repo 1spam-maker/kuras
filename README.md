@@ -80,3 +80,5 @@ Tinklų nuolaidų taisyklės, kurias puslapis atima iš ENA kainų (pasirinkimas
 Redaguoji tiesiai GitHub'e: `dienos` 1=Pr…7=Sk, `sventes: true` – galioja ir LT švenčių dienomis,
 `galioja_iki` – pasibaigusios akcijos automatiškai nebėra rodomos. Tam pačiam tinklui tą pačią dieną
 taikoma didžiausia nuolaida (nesumuojama). `tinklas` turi tiksliai sutapti su ENA pavadinimu.
+`adresai` (nebūtina) – akcija tik nurodytose degalinėse, pvz. `["Vilnius, Ozo g. 12"]`; lyginama su ENA adresu
+nepaisant raidžių dydžio, lietuviškų raidžių ir skyrybos.

@@ -1,21 +1,28 @@
 {
-  "_kaip_redaguoti": "dienos: 1=Pr ... 7=Sk. sventes:true = galioja ir LT švenčių dienomis. tipai: praleisk = visi degalai, arba sąrašas, pvz. [\"95 benzinas\",\"Dyzelinas\"]. tinklas turi sutapti su ENA pavadinimu. galioja_iki: YYYY-MM-DD arba null. Tą pačią dieną tam pačiam tinklui taikoma DIDŽIAUSIA nuolaida (nesumuojama).",
-  "patikrinta": "2026-10-19",
+  "_kaip_redaguoti": "dienos: 1=Pr ... 7=Sk. sventes:true = galioja ir LT švenčių dienomis. tipai: praleisk = visi degalai, arba sąrašas, pvz. [\"95 benzinas\",\"Dyzelinas\"]. adresai: praleisk = visose tinklo degalinėse, arba sąrašas „Miestas, Gatvė g. Nr.“ kaip ENA adrese (raidžių dydis, lietuviškos raidės ir skyryba nesvarbu). tinklas turi sutapti su ENA pavadinimu. galioja_iki: YYYY-MM-DD arba null. Tą pačią dieną tai pačiai degalinei taikoma DIDŽIAUSIA nuolaida (nesumuojama).",
+  "patikrinta": "2026-11-05",
   "akcijos": [
     {
       "tinklas": "UAB Circle K Lietuva",
       "pavadinimas": "Savaitgalio premija",
       "nuolaida_ct": 10,
-      "dienos": [5, 6, 7],
-      "salyga": "Penktadienį aktyvuoti Circle K programėlėje (Premijos); 1 kartą per pylimą; ne verslo klientams",
-      "galioja_iki": "2026-11-04",
+      "dienos": [
+        5,
+        6,
+        7
+      ],
+      "salyga": "Aktyvuoti Circle K programėlėje (Premijos) Pn–Sk; 1 kartą per pylimą; ne verslo klientams",
+      "galioja_iki": "2027-01-06",
       "saltinis": "https://www.circlek.lt/10ct"
     },
     {
       "tinklas": "UAB Viada LT",
       "pavadinimas": "Nuolaidų savaitgaliai",
       "nuolaida_ct": 10,
-      "dienos": [6, 7],
+      "dienos": [
+        6,
+        7
+      ],
       "sventes": true,
       "salyga": "Su ViadaPLUS kortele ar programėle; ne verslo mokėjimo kortelėms",
       "galioja_iki": null,
@@ -25,16 +32,86 @@
       "tinklas": "UAB Viada LT",
       "pavadinimas": "ViadaPLUS lojalumo nuolaida",
       "nuolaida_ct": 3,
-      "dienos": [1, 2, 3, 4, 5, 6, 7],
+      "dienos": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
       "salyga": "ViadaPLUS kortelė; 3,5 ct, jei praėjusį mėnesį pilta >70 l",
       "galioja_iki": null,
       "saltinis": "https://www.viada.lt/korteles-ir-lojalumas/viadaplus-lojalumas/"
     },
     {
+      "tinklas": "UAB Viada LT",
+      "pavadinimas": "Lokali akcija",
+      "nuolaida_ct": 10,
+      "dienos": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "salyga": "Su ViadaPLUS kortele ar programėle; tik nurodytose degalinėse; kitos nuolaidos nesumuojamos",
+      "adresai": [
+        "Alytus, Naujoji g. 27",
+        "Kaunas, Baltijos g. 90B",
+        "Kaunas, Miežėnų g. 18",
+        "Kampiškių k.",
+        "Kaunas, Karaliaus Mindaugo pr. 54",
+        "Kaunas, Veiverių g. 124B",
+        "Kerelių k.",
+        "Kupiškis, Pergalės g. 15",
+        "Kretingalė, Klaipėdos g. 1A",
+        "Klaipėda, Nemuno g. 139",
+        "Marijampolė, J. Ambrazevičiaus",
+        "Mažeikiai, Žemaitijos g. 75",
+        "Pakruojis, Vytauto Didžiojo g. 98",
+        "Panevėžys, Senamiesčio g. 116A",
+        "Panevėžys, Pušaloto g. 193A",
+        "Tičkūnų k.",
+        "Plungė, Žaltakalnio g. 10",
+        "Šiauliai, Tilžės g. 274",
+        "Šilutė, Tilžės g. 59",
+        "Širvintos, Plento g. 4",
+        "Tauragė, Dariaus ir Girėno g. 138",
+        "Vilnius, Saltoniškių g. 12",
+        "Vilnius, Ozo g. 12",
+        "Vilnius, Verkių g. 52",
+        "Grigiškės, Kovo 11-osios g. 75",
+        "Vilnius, Justiniškių g. 12",
+        "Vilnius, Sodų g. 22",
+        "Vilnius, Pilaitės pr. 13",
+        "Vilnius, Pilaitės pr. 28",
+        "Avižienių k., Ožiarūčių g. 1A",
+        "Vilnius, Vilkpėdės g. 2",
+        "Vilkaviškis, Vytauto g. 105",
+        "Visaginas, Taikos pr. 23B",
+        "Ilgakiemio k., Prienų g. 22",
+        "Lazdijai, Turistų g. 32"
+      ],
+      "galioja_iki": null,
+      "saltinis": "https://www.viada.lt/lokali-akcija/"
+    },
+    {
       "tinklas": "UAB Baltic Petroleum",
       "pavadinimas": "Lojalumo kortelė",
       "nuolaida_ct": 3,
-      "dienos": [1, 2, 3, 4, 5, 6, 7],
+      "dienos": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
       "salyga": "Baltic Petroleum kortelė; netaikoma „Kaina grynaisiais+“ degalinėse",
       "galioja_iki": null,
       "saltinis": "https://balticpetroleum.lt/korteles-privatiems"

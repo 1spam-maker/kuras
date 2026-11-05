@@ -156,6 +156,7 @@ details.fold>summary .tag{font-family:var(--mono);font-size:10px;background:var(
 .near-links{display:flex;gap:14px;flex-wrap:wrap}
 .pick-hint{color:#58a6ff}
 .tg.vol{background:#3a2550;color:#d2a8ff}
+.promo details.adr{margin-top:2px}.promo details.adr summary{cursor:pointer;color:var(--ink2)}
 .brent-info{margin-top:14px;font-size:13px;line-height:1.6;color:var(--ink2)}
 .brent-info b{color:var(--ink)}
 .brent-info .sig{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;color:var(--ink)}
@@ -357,7 +358,7 @@ function compute(D,f){
   const tgt=discTarget(f.disc);
   if(latest>=0)for(let i=R.dayStart[latest];i<R.dayStart[latest+1];i++){
     if(!pass(i))continue;day.push(i);stSet.add(R.s[i]);
-    const p=R.p[i]/1000,e=tgt?p-discEUR(D.stations[R.s[i]][0],D.types[R.t[i]],tgt.date):p;eff.set(i,e);
+    const p=R.p[i]/1000,e=tgt?p-discEUR(D.stations[R.s[i]],D.types[R.t[i]],tgt.date):p;eff.set(i,e);
     if(R.t[i]!==bt)continue;
     btSum+=p;btN++;
     const b=D.stBrand[R.s[i]],a=brandAgg.get(b)||{e:0,n:0,st:new Set()};a.e+=e;a.n++;a.st.add(R.s[i]);brandAgg.set(b,a);
@@ -389,13 +390,22 @@ function discTarget(v){
 }
 const promoActiveOn=(p,date)=>(!p.galioja_iki||date<=p.galioja_iki)&&(!p.galioja_nuo||date>=p.galioja_nuo)
   &&((p.dienos||[]).includes(isoWd(date))||(p.sventes&&isHolidayLT(date)));
-// didžiausia nuolaida (€/l) tinklui+tipui konkrečią dieną; nesumuojama
-function discInfo(brand,type,date){
-  let best=null;for(const p of PROMOS){if(p.tinklas!==brand)continue;if(p.tipai&&!p.tipai.includes(type))continue;
-    if(promoActiveOn(p,date)&&(!best||p.nuolaida_ct>best.nuolaida_ct))best=p}
+// akcija tik nurodytose degalinėse (adresai): adreso fragmentas turi sutapti su ENA adresu (be diakritikų, skyrybos)
+const normA=x=>' '+String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim()+' ';
+const _adrCache=new Map();
+function promoAt(p,st){
+  if(!p.adresai)return true;
+  p._a??=p.adresai.map(normA);
+  let a=_adrCache.get(st);if(a===undefined){a=normA(st[1]+' '+st[2]);_adrCache.set(st,a)}
+  return p._a.some(f=>a.includes(f));
+}
+// didžiausia nuolaida (€/l) degalinei (st=[tinklas,savivaldybė,adresas]) + tipui konkrečią dieną; nesumuojama
+function discInfo(st,type,date){
+  let best=null;for(const p of PROMOS){if(p.tinklas!==st[0])continue;if(p.tipai&&!p.tipai.includes(type))continue;
+    if(promoActiveOn(p,date)&&(!best||p.nuolaida_ct>best.nuolaida_ct)&&promoAt(p,st))best=p}
   return best;
 }
-const discEUR=(brand,type,date)=>{const p=discInfo(brand,type,date);return p?p.nuolaida_ct/100:0};
+const discEUR=(st,type,date)=>{const p=discInfo(st,type,date);return p?p.nuolaida_ct/100:0};
 function fmtDays(p){
   const d=[...(p.dienos||[])].sort((a,b)=>a-b);let s;
   if(d.length===7)s='kasdien';
@@ -418,7 +428,8 @@ function renderPromos(){
     const short=p.tinklas.replace(/^(UAB|AB)\s+/,'').replace(/\s+(Lietuva|LT)$/,'');
     return`<div class="promo${on?' on':''}"><div class="amt">−${String(p.nuolaida_ct).replace('.',',')}<small style="font-size:11px"> ct</small></div>
       <div><div class="ttl">${esc(short)} · ${esc(p.pavadinimas)}${badge}</div>
-      <div class="meta">${esc(fmtDays(p))}${p.tipai?' · '+esc(p.tipai.join(', ')):' · visi degalai'}${p.galioja_iki?' · iki '+p.galioja_iki:''}</div>
+      <div class="meta">${esc(fmtDays(p))}${p.tipai?' · '+esc(p.tipai.join(', ')):' · visi degalai'}${p.galioja_iki?' · iki '+p.galioja_iki:''}${p.adresai?' · tik '+p.adresai.length+' degalinėse':''}</div>
+      ${p.adresai?`<details class="meta adr"><summary>Kuriose degalinėse?</summary>${p.adresai.map(esc).join('; ')}</details>`:''}
       <div class="meta">${esc(p.salyga||'')}${p.saltinis?` · <a href="${esc(p.saltinis)}" target="_blank" rel="noopener">šaltinis ↗</a>`:''}</div></div></div>`}).join('');
 }
 
@@ -582,7 +593,7 @@ function renderMap(){
   if(!MAP)return;
   const{t,tgt}=mapState(),type=D.types[t],rows=latestByStation(t),list=[];
   for(const[s,v]of rows){const g=GEO[D.stations[s].join('|')];if(!g)continue;
-    const pr=tgt?discInfo(D.stations[s][0],type,tgt.date):null,disc=pr?pr.nuolaida_ct/100:0;
+    const pr=tgt?discInfo(D.stations[s],type,tgt.date):null,disc=pr?pr.nuolaida_ct/100:0;
     list.push({s,lat:g[0],lon:g[1],prec:g[2],p:v.p,e:v.p-disc,disc,promo:pr,day:D.dates[v.d]})}
   const es=list.map(x=>x.e).sort((a,b)=>a-b),q=k=>es[Math.min(es.length-1,Math.floor(es.length*k))],th=[q(.2),q(.4),q(.6),q(.8)];
   const colOf=e=>{const i=th.findIndex(x=>e<=x);return PCOL[i<0?4:i]};
@@ -891,7 +902,7 @@ function renderTable(){
   for(const ti of types)for(const[s,v]of latestByStation(ti)){
     if(b>=0&&D.stBrand[s]!==b)continue;if(m>=0&&D.stMuni[s]!==m)continue;
     if(words.length){const txt=ST_TEXT[s]+' '+fold(D.types[ti]);if(!words.every(w=>txt.includes(w)))continue}
-    const st=D.stations[s],pr=tgt?discInfo(st[0],D.types[ti],tgt.date):null,disc=pr?pr.nuolaida_ct/100:0;
+    const st=D.stations[s],pr=tgt?discInfo(st,D.types[ti],tgt.date):null,disc=pr?pr.nuolaida_ct/100:0;
     rows.push({s,t:ti,p:v.p,e:v.p-disc,disc,day:D.dates[v.d]});
   }
   if(sortKey==='eff'&&!tgt)sortKey='price';
