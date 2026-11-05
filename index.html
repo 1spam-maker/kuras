@@ -737,7 +737,7 @@ async function init(){
     if(!r.ok)throw new Error('Nepavyko įkelti duomenų. Pabandyk vėliau.');
     const raw=await r.json();D=build(raw);computeVol();
     try{const a=await fetch('akcijos.json?t='+Date.now());if(a.ok)PROMOS=((await a.json()).akcijos)||[]}catch(e){PROMOS=[]}
-    if(raw.updated)$('#updInfo').textContent='Atnaujinta '+new Intl.DateTimeFormat('lt-LT',{timeZone:'Europe/Vilnius',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(raw.updated))+' · ENA kainas skelbia darbo dienomis po 10 val.';
+    if(raw.updated)$('#updInfo').textContent='Atnaujinta '+new Intl.DateTimeFormat('lt-LT',{timeZone:'Europe/Vilnius',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(raw.updated))+' · tikrinama darbo dienomis 10:20, 11:20, 13:20 ir 16:20';
     if(!D.R.n)throw new Error('Duomenų dar nėra. Jie atsiras po artimiausio sėkmingo scrape paleidimo.');
     $('#subInfo').textContent=`${D.dates.length} d. · ${D.dates[0]} – ${D.dates.at(-1)} · ${D.R.n.toLocaleString('lt-LT')} kainų`;
     const opt=(arr,all)=>`<option value="-1">${all}</option>`+arr.map((v,i)=>`<option value="${i}">${esc(v)}</option>`).join('');

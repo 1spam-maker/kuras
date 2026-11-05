@@ -9,7 +9,9 @@ name: Kuro kainų scrape
 # Minutės ne :00/:05, nes valandų pradžioje GitHub labiausiai vėlina paleidimus.
 # DĖMESIO: nuo 2026-10 pabaigos GitHub „schedule“ paleidimus vėlina 6–10 val., todėl
 # pagrindinis paleidiklis – išorinis cron (cron-job.org), kviečiantis workflow_dispatch
-# per GitHub API (paleidžiama iškart). Šie schedule lieka kaip atsarginis variantas.
+# per GitHub API (paleidžiama iškart): Pr–Pn 10:20, 11:20, 13:20, 16:20 Vilniaus laiku.
+# Tokenas (fine-grained, tik kuras, Actions: write) galioja iki 2027-10-31 — tada atnaujinti.
+# Šie schedule lieka kaip atsarginis variantas.
 on:
   schedule:
     - cron: '47 4 * * 2-6'    # ~07:47 LT vasarą / 06:47 žiemą (an.–šešt.)
